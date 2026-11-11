@@ -6,7 +6,8 @@
     "dev": "next dev --port 3000",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:pbt": "tsx --test src/test/pbt/telemetry-ansi.test.ts"
   },
   "dependencies": {
     "@necro-mud/shared": "workspace:*",
