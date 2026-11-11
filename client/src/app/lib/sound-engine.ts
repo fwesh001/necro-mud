@@ -9,10 +9,13 @@ const STORAGE_AMBIENT_KEY = 'necro-mud:audio-ambient';
  * RetroSoundEngine — Zero-dependency procedural WebAudio synthesizer.
  *
  * Synthesizes 1980s modem handshakes, IBM Model M mechanical keystrokes,
- * CRT degauss coil discharges, 8-bit chiptune event cues, and a 60Hz hum.
+ * CRT degauss coil discharges, 8-bit chiptune event cues, and a 60Hz hum,
+ * routed through a shared AnalyserNode for live oscilloscope rendering.
  */
 export class RetroSoundEngine {
   private ctx: AudioContext | null = null;
+  private masterOutput: GainNode | null = null;
+  private analyser: AnalyserNode | null = null;
   private muted: boolean = false;
   private ambientEnabled: boolean = false;
   private ambientNodes: {
@@ -40,7 +43,21 @@ export class RetroSoundEngine {
       const AudioCtx = window.AudioContext
         || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AudioCtx) return null;
-      this.ctx = new AudioCtx();
+      const ctx = new AudioCtx();
+
+      const masterOutput = ctx.createGain();
+      masterOutput.gain.setValueAtTime(1, ctx.currentTime);
+
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.72;
+
+      masterOutput.connect(analyser);
+      analyser.connect(ctx.destination);
+
+      this.ctx = ctx;
+      this.masterOutput = masterOutput;
+      this.analyser = analyser;
     }
 
     if (this.ctx.state === 'suspended') {
@@ -50,6 +67,17 @@ export class RetroSoundEngine {
     }
 
     return this.ctx;
+  }
+
+  private getOutputNode(): AudioNode | null {
+    const ctx = this.ensureContext();
+    if (!ctx) return null;
+    return this.masterOutput ?? ctx.destination;
+  }
+
+  /** Expose the live AnalyserNode for PhosphorOscilloscope (null until audio initialized) */
+  getAnalyserNode(): AnalyserNode | null {
+    return this.analyser;
   }
 
   /** Unlock audio context on first user click/keydown */
@@ -112,6 +140,8 @@ export class RetroSoundEngine {
 
   private startAmbientInternal(ctx: AudioContext): void {
     if (this.ambientNodes) return;
+    const output = this.getOutputNode();
+    if (!output) return;
 
     const now = ctx.currentTime;
     const masterGain = ctx.createGain();
@@ -141,7 +171,7 @@ export class RetroSoundEngine {
     oscSub.connect(gainSub);
     gainSub.connect(lowpass);
     lowpass.connect(masterGain);
-    masterGain.connect(ctx.destination);
+    masterGain.connect(output);
 
     osc60.start(now);
     oscSub.start(now);
@@ -187,12 +217,13 @@ export class RetroSoundEngine {
     if (this.muted) return () => {};
 
     const ctx = this.ensureContext();
-    if (!ctx) return () => {};
+    const output = this.getOutputNode();
+    if (!ctx || !output) return () => {};
 
     const now = ctx.currentTime;
     const master = ctx.createGain();
     master.gain.setValueAtTime(0.11, now);
-    master.connect(ctx.destination);
+    master.connect(output);
 
     const cleanupOscs: Array<{ stop: () => void }> = [];
     let stopped = false;
@@ -330,7 +361,8 @@ export class RetroSoundEngine {
   playKeystroke(): void {
     if (this.muted) return;
     const ctx = this.ensureContext();
-    if (!ctx || ctx.state !== 'running') return;
+    const output = this.getOutputNode();
+    if (!ctx || !output || ctx.state !== 'running') return;
 
     const now = ctx.currentTime;
 
@@ -355,7 +387,7 @@ export class RetroSoundEngine {
 
     noise.connect(hp);
     hp.connect(clickGain);
-    clickGain.connect(ctx.destination);
+    clickGain.connect(output);
     noise.start(now);
 
     // 2. Mechanical thud
@@ -368,7 +400,7 @@ export class RetroSoundEngine {
     thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.024);
 
     thudOsc.connect(thudGain);
-    thudGain.connect(ctx.destination);
+    thudGain.connect(output);
     thudOsc.start(now);
     thudOsc.stop(now + 0.026);
   }
@@ -377,7 +409,8 @@ export class RetroSoundEngine {
   playDegauss(): void {
     if (this.muted) return;
     const ctx = this.ensureContext();
-    if (!ctx) return;
+    const output = this.getOutputNode();
+    if (!ctx || !output) return;
 
     const now = ctx.currentTime;
 
@@ -390,7 +423,7 @@ export class RetroSoundEngine {
     thumpGain.gain.setValueAtTime(0.28, now);
     thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
     thumpOsc.connect(thumpGain);
-    thumpGain.connect(ctx.destination);
+    thumpGain.connect(output);
     thumpOsc.start(now);
     thumpOsc.stop(now + 0.24);
 
@@ -410,13 +443,13 @@ export class RetroSoundEngine {
 
     coilOsc.connect(lp);
     lp.connect(coilGain);
-    coilGain.connect(ctx.destination);
+    coilGain.connect(output);
     coilOsc.start(now);
     coilOsc.stop(now + 0.88);
   }
 
-  /** Play 8-bit chiptune cues based on server event type */
-  playEventSfx(event: ServerEventType): void {
+  /** Play 8-bit chiptune cues based on server event type & Wave 3+ payloads */
+  playEventSfx(event: ServerEventType, payload?: Record<string, unknown>): void {
     if (this.muted) return;
     const ctx = this.ensureContext();
     if (!ctx || ctx.state !== 'running') return;
@@ -425,8 +458,19 @@ export class RetroSoundEngine {
 
     switch (event) {
       case 'combat-result': {
-        this.playTone(ctx, 'square', 520, 140, now, 0.11, 0.07);
-        this.playTone(ctx, 'sawtooth', 180, 70, now + 0.05, 0.12, 0.06);
+        const patchResult = payload?.patchResult as { solved?: boolean } | undefined;
+        const solvedOrSlain = Boolean(payload?.targetSlain || patchResult?.solved);
+
+        if (solvedOrSlain) {
+          this.playFanfare(ctx, now);
+        } else if (Number(payload?.damageReceived ?? 0) > 0) {
+          // Hit + player hurt crunch
+          this.playTone(ctx, 'square', 460, 140, now, 0.09, 0.065);
+          this.playTone(ctx, 'sawtooth', 160, 58, now + 0.07, 0.16, 0.08);
+        } else {
+          // Clean strike / partial patch
+          this.playTone(ctx, 'square', 540, 180, now, 0.1, 0.07);
+        }
         break;
       }
       case 'monster-spawned': {
@@ -437,18 +481,27 @@ export class RetroSoundEngine {
         break;
       }
       case 'monster-slain': {
-        const fanfare = [392, 523.25, 659.25, 783.99];
-        fanfare.forEach((freq, i) => {
-          this.playTone(
-            ctx,
-            'square',
-            freq,
-            freq,
-            now + i * 0.085,
-            i === fanfare.length - 1 ? 0.24 : 0.08,
-            0.07,
-          );
-        });
+        this.playFanfare(ctx, now);
+        break;
+      }
+      case 'repo-loaded': {
+        this.playDegauss();
+        this.playTone(ctx, 'sine', 880, 1320, now + 0.15, 0.18, 0.06);
+        break;
+      }
+      case 'narration': {
+        if (payload?.spellResult) {
+          const spellNotes = [523.25, 659.25, 783.99, 1046.5];
+          spellNotes.forEach((freq, i) => {
+            this.playTone(ctx, 'triangle', freq, freq * 1.04, now + i * 0.055, 0.11, 0.075);
+          });
+        }
+        break;
+      }
+      case 'leaderboard-view':
+      case 'scan-result': {
+        this.playTone(ctx, 'square', 660, 880, now, 0.06, 0.04);
+        this.playTone(ctx, 'square', 880, 1174, now + 0.06, 0.08, 0.04);
         break;
       }
       case 'error': {
@@ -456,6 +509,7 @@ export class RetroSoundEngine {
         break;
       }
       case 'player-joined':
+      case 'player-moved':
       case 'room-description': {
         this.playTone(ctx, 'sine', 660, 880, now, 0.06, 0.035);
         break;
@@ -463,6 +517,21 @@ export class RetroSoundEngine {
       default:
         break;
     }
+  }
+
+  private playFanfare(ctx: AudioContext, now: number): void {
+    const fanfare = [392, 523.25, 659.25, 783.99];
+    fanfare.forEach((freq, i) => {
+      this.playTone(
+        ctx,
+        'square',
+        freq,
+        freq,
+        now + i * 0.085,
+        i === fanfare.length - 1 ? 0.24 : 0.08,
+        0.07,
+      );
+    });
   }
 
   private playTone(
@@ -474,6 +543,9 @@ export class RetroSoundEngine {
     duration: number,
     volume: number,
   ): void {
+    const output = this.getOutputNode();
+    if (!output) return;
+
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = type;
@@ -487,7 +559,7 @@ export class RetroSoundEngine {
     gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(output);
     osc.start(startTime);
     osc.stop(startTime + duration + 0.015);
   }
@@ -501,4 +573,3 @@ export function getSoundEngine(): RetroSoundEngine {
   }
   return sharedSoundEngine;
 }
-
