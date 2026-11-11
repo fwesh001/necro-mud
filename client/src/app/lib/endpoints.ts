@@ -48,3 +48,4 @@ export function deriveHealthUrl(wsUrl: string): string {
     return `${httpBase}/api/health`;
   }
 }
+
