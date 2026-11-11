@@ -40,7 +40,7 @@ necro-mud/
 |:------------|:-------------------------------|:---------------------------------|:--------------------|
 | **Zabdiel** | Frontend, CRT aesthetics,      | `client/`                        | `feat/client-*`     |
 |             | Xterm.js, Audio, Boot sequence |                                  |                     |
-| **Eke**     | MUD Engine, WebSocket state,   | `server/`, `shared/`             | `feat/server-*`     |
+| **Samkiel (Eke)** | MUD Engine, WebSocket state, | `server/`, `shared/`           | `feat/server-*`     |
 |             | GitHub Parser, Combat engine   |                                  | `feat/shared-*`     |
 
 ### Shared Ownership (Both)
@@ -50,7 +50,7 @@ necro-mud/
 
 ### Conflict-Free Parallel Work Rules
 1. **Zabdiel** works exclusively in `client/` — never modifies `server/src/`
-2. **Eke** works in `server/` and `shared/` — never modifies `client/src/`
+2. **Samkiel (Eke)** works in `server/` and `shared/` — never modifies `client/src/`
 3. Changes to `shared/` types require a brief sync message to Zabdiel (since client imports shared)
 4. Both developers may update `.kiro/specs/` and root docs
 5. PRs should target `main` from feature branches, reviewed by the other developer
@@ -83,10 +83,11 @@ client ✗──→ server  (NEVER)
 ```
 main ← feat/client-crt-bezel     (Zabdiel)
      ← feat/client-boot-sequence (Zabdiel)
-     ← feat/server-combat-engine (Eke)
-     ← feat/shared-event-types   (Eke)
+     ← feat/client-crt-costume   (Zabdiel)
+     ← feat/server-github-ai     (Samkiel (Eke))
+     ← feat/shared-event-types   (Samkiel (Eke))
      ← fix/client-ssr-hydration  (Zabdiel)
-     ← fix/server-ws-broadcast   (Eke)
+     ← fix/server-ws-broadcast   (Samkiel (Eke))
 ```
 
 ## Build Order
