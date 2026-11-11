@@ -15,22 +15,25 @@ cd necro-mud
 git checkout feat/server-github-ai
 
 # 3. Install all workspace dependencies
-npm install
+pnpm install
 
 # 4. Build shared types (REQUIRED before running server)
-npm run build:shared
+pnpm run build:shared
 
 # 5. Start the backend server in watch mode (HTTP :4000 & WS ws://localhost:4000)
-npm run dev:server
+pnpm run dev:server
 ```
 
 ### Useful Verification Commands
 ```bash
 # Type-check shared + server
-npx tsc --noEmit --project shared/tsconfig.json && npx tsc --noEmit --project server/tsconfig.json
+pnpm --filter @necro-mud/shared build && pnpm --filter @necro-mud/server build
 
-# Build shared and server
-npm run build:shared && npm run build:server
+# Run complete automated smoke test
+pnpm run test:smoke
+
+# Launch interactive CLI terminal crawler
+pnpm run play
 
 # Check live health endpoint (while server is running)
 curl http://localhost:4000/api/health

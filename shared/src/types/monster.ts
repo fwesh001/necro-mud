@@ -39,5 +39,9 @@ export interface Monster {
   xpReward: number;
   /** Optional loot dropped on death (item IDs) */
   loot: string[];
+  /** Optional labels from the source artifact (e.g. bug, wontfix) */
+  labels?: string[];
+  /** Optional code or issue snippet for deeper SCAN inspection */
+  snippet?: string;
 }
 

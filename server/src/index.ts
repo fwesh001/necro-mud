@@ -10,8 +10,9 @@ import http from 'node:http';
 import { WebSocketServer } from 'ws';
 import { handleConnection } from './ws/handler.js';
 import { DungeonState } from './engine/dungeon.js';
-import { generateDungeonFromRepo } from './engine/github-parser.js';
+import { generateMockDungeon } from './engine/github-parser.js';
 import { getWelcomeBanner } from './ansi/banner.js';
+import { startTelnetBridge } from './telnet/bridge.js';
 
 const PORT = parseInt(process.env.PORT ?? '4000', 10);
 
@@ -31,7 +32,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 // ── Dungeon Initialisation ───────────────────────────────────────────
-const { rooms, monsters } = generateDungeonFromRepo();
+const { rooms, monsters } = generateMockDungeon();
 const dungeon = new DungeonState(rooms, monsters);
 
 // ── HTTP + WebSocket Server ──────────────────────────────────────────
@@ -48,6 +49,7 @@ server.listen(PORT, () => {
   console.log(`\n  ⚔  Necro-MUD server listening on http://localhost:${PORT}`);
   console.log(`  ⚔  WebSocket endpoint: ws://localhost:${PORT}`);
   console.log(`  ⚔  Dungeon loaded: ${dungeon.getRoomCount()} rooms, ${dungeon.getMonsterCount()} monsters\n`);
+  startTelnetBridge(dungeon, wss);
 });
 
 export { app, server, wss, dungeon };

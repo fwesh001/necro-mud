@@ -7,6 +7,7 @@
 
 import type { Room, Monster, Player, CombatResultPayload } from '@necro-mud/shared';
 import { CP437, FG, RESET, BOLD, DIM, AnsiColor } from '@necro-mud/shared';
+import { computePlayerTitle } from '../engine/persistence.js';
 
 const WIDTH = 78; // Total box width including borders (fits cleanly in 80-col grid)
 
@@ -15,9 +16,10 @@ function stripAnsi(str: string): string {
   return str.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
-/** Word-wrap plain text lines to a maximum visible width */
+/** Word-wrap text (plain or ANSI-formatted) to a maximum visible width */
 function wrapText(text: string, maxWidth: number): string[] {
   const output: string[] = [];
+
   for (const rawLine of text.split(/\r?\n/)) {
     const visibleLen = stripAnsi(rawLine).length;
     if (visibleLen <= maxWidth) {
@@ -25,24 +27,52 @@ function wrapText(text: string, maxWidth: number): string[] {
       continue;
     }
 
-    // Plain-text word wrap for long prose lines without breaking ANSI tokens
-    if (rawLine === stripAnsi(rawLine)) {
-      let current = '';
-      for (const word of rawLine.split(' ')) {
-        if (current.length === 0) {
-          current = word;
-        } else if (current.length + 1 + word.length <= maxWidth) {
-          current += ` ${word}`;
+    // Split line into words and whitespace tokens
+    const tokens = rawLine.split(/(\s+)/);
+    let currentLine = '';
+    let currentVisible = 0;
+
+    for (const token of tokens) {
+      if (!token) continue;
+      const tokenVisible = stripAnsi(token).length;
+
+      // If token itself is longer than maxWidth (e.g. huge URL), slice it
+      if (tokenVisible > maxWidth) {
+        if (currentLine.length > 0) {
+          output.push(currentLine);
+          currentLine = '';
+          currentVisible = 0;
+        }
+        let remaining = token;
+        while (stripAnsi(remaining).length > maxWidth) {
+          output.push(remaining.slice(0, maxWidth));
+          remaining = remaining.slice(maxWidth);
+        }
+        currentLine = remaining;
+        currentVisible = stripAnsi(remaining).length;
+        continue;
+      }
+
+      if (currentVisible + tokenVisible <= maxWidth) {
+        currentLine += token;
+        currentVisible += tokenVisible;
+      } else {
+        if (currentLine.trim().length > 0) {
+          output.push(currentLine);
+          currentLine = token.startsWith(' ') ? token.trimStart() : token;
+          currentVisible = stripAnsi(currentLine).length;
         } else {
-          output.push(current);
-          current = word;
+          currentLine += token;
+          currentVisible += tokenVisible;
         }
       }
-      if (current.length > 0) output.push(current);
-    } else {
-      output.push(rawLine);
+    }
+
+    if (currentLine.length > 0) {
+      output.push(currentLine);
     }
   }
+
   return output;
 }
 
@@ -198,13 +228,15 @@ export function renderCombatResult(result: CombatResultPayload): string {
 export function renderStatusView(player: Player): string {
   const lines: string[] = [];
 
-  lines.push(`${FG[AnsiColor.BrightCyan]}Name:${RESET}  ${player.name}`);
-  lines.push(`${FG[AnsiColor.BrightGreen]}HP:${RESET}    ${renderHpBar(player.hp, player.maxHp, 20)} ${player.hp}/${player.maxHp}`);
-  lines.push(`${FG[AnsiColor.BrightRed]}ATK:${RESET}   ${player.attack}`);
-  lines.push(`${FG[AnsiColor.BrightBlue]}DEF:${RESET}   ${player.defense}`);
-  lines.push(`${FG[AnsiColor.BrightYellow]}XP:${RESET}    ${player.xp}`);
-  lines.push(`${FG[AnsiColor.BrightMagenta]}Room:${RESET}  ${player.currentRoomId}`);
-  lines.push(`${FG[AnsiColor.White]}Items:${RESET} ${player.inventory.length > 0 ? player.inventory.join(', ') : '(empty)'}`);
+  const title = player.title || computePlayerTitle(player.xp);
+  lines.push(`${FG[AnsiColor.BrightCyan]}Name:${RESET}   ${player.name}  ${DIM}(${title})${RESET}`);
+  lines.push(`${FG[AnsiColor.BrightGreen]}HP:${RESET}     ${renderHpBar(player.hp, player.maxHp, 20)} ${player.hp}/${player.maxHp}`);
+  lines.push(`${FG[AnsiColor.BrightRed]}ATK:${RESET}    ${player.attack}`);
+  lines.push(`${FG[AnsiColor.BrightBlue]}DEF:${RESET}    ${player.defense}`);
+  lines.push(`${FG[AnsiColor.BrightYellow]}XP:${RESET}     ${player.xp}`);
+  lines.push(`${FG[AnsiColor.Yellow]}Bugs:${RESET}   ${player.bugsSquashed ?? 0} squashed`);
+  lines.push(`${FG[AnsiColor.BrightMagenta]}Room:${RESET}   ${player.currentRoomId}`);
+  lines.push(`${FG[AnsiColor.White]}Items:${RESET}  ${player.inventory.length > 0 ? player.inventory.join(', ') : '(empty)'}`);
 
   return '\r\n' + renderBox('ADVENTURER STATUS', lines.join('\r\n')) + '\r\n';
 }
@@ -264,20 +296,162 @@ export function renderHelpText(): string {
     ['HELP',              'Show this help message'],
     ['LOOK',              'Examine your surroundings'],
     ['MAP',               'View the dungeon map'],
-    ['STATUS',            'Check your stats'],
-    ['MOVE <dir>',        'Move (north/south/east/west/up/down or n/s/e/w)'],
+    ['STATUS',            'Check your stats and inventory'],
+    ['MOVE <dir>',        'Move (north/south/east/west or n/s/e/w)'],
     ['ATTACK <monster>',  'Attack a monster in the room'],
-    ['SCAN <monster>',    'Analyse a monster\'s GitHub origin'],
-    ['PATCH <monster>',   'Attempt to fix a bug-monster (coming soon)'],
-    ['CAST <spell>',      'Cast a spell from a commit scroll (coming soon)'],
+    ['SCAN <monster>',    'Deep inspection of GitHub origin & code snippet'],
+    ['PATCH <monster>',   'Apply tactical bug-fixing patch to defect'],
+    ['CAST <spell>',      'Cast commit scroll (HOTFIX/REFACTOR/ROLLBACK)'],
+    ['REPO <owner/repo>', 'Hot-swap dungeon with a live GitHub repository'],
+    ['TOP',               'View Hall of Fame XP leaderboard & rankings'],
     ['SAY <message>',     'Speak to other adventurers in the room'],
   ];
 
   const lines = commands.map(([cmd, desc]) =>
-    `  ${FG[AnsiColor.BrightYellow]}${(cmd ?? '').padEnd(18)}${RESET} ${FG[AnsiColor.White]}${desc}${RESET}`
+    `  ${FG[AnsiColor.BrightYellow]}${(cmd ?? '').padEnd(19)}${RESET} ${FG[AnsiColor.White]}${desc}${RESET}`
   );
 
   return '\r\n' + renderBox('COMMANDS', lines.join('\r\n')) + '\r\n';
+}
+
+// ── Leaderboard View ──────────────────────────────────────────────
+
+export function renderLeaderboard(
+  records: Array<{ name: string; xp: number; title: string; bugsSquashed?: number }>,
+): string {
+  const lines: string[] = [];
+
+  lines.push(
+    ` ${FG[AnsiColor.BrightYellow]}#  ${'HACKER'.padEnd(16)} ${'RANK / TITLE'.padEnd(24)} ${'XP'.padStart(6)} ${'BUGS'.padStart(6)}${RESET}`
+  );
+  lines.push(
+    ` ${FG[AnsiColor.BrightBlack]}${CP437.SINGLE_HORIZONTAL.repeat(60)}${RESET}`
+  );
+
+  if (records.length === 0) {
+    lines.push(`  ${FG[AnsiColor.White]}No adventurers recorded in the hall of fame yet.${RESET}`);
+  } else {
+    records.slice(0, 10).forEach((rec, idx) => {
+      const rank = `${idx + 1}.`.padEnd(3);
+      const name = rec.name.slice(0, 15).padEnd(16);
+      const title = rec.title.slice(0, 23).padEnd(24);
+      const xp = String(rec.xp).padStart(6);
+      const bugs = String(rec.bugsSquashed ?? 0).padStart(6);
+
+      const color =
+        idx === 0
+          ? AnsiColor.BrightYellow
+          : idx === 1
+          ? AnsiColor.BrightWhite
+          : idx === 2
+          ? AnsiColor.Yellow
+          : AnsiColor.White;
+
+      lines.push(
+        ` ${FG[color]}${rank}${name}${title}${xp}${bugs}${RESET}`
+      );
+    });
+  }
+
+  return '\r\n' + renderBox('HALL OF FAME (TOP HACKERS)', lines.join('\r\n')) + '\r\n';
+}
+
+// ── Scan Result ───────────────────────────────────────────────────
+
+export function renderScanResult(monster: Monster): string {
+  const lines: string[] = [];
+
+  const tierColor =
+    monster.tier === 'boss'
+      ? AnsiColor.BrightMagenta
+      : monster.tier === 'elite'
+      ? AnsiColor.BrightYellow
+      : AnsiColor.Red;
+
+  lines.push(`${FG[AnsiColor.BrightCyan]}Target:${RESET}   ${FG[tierColor]}${BOLD}${monster.name}${RESET}`);
+  lines.push(`${FG[AnsiColor.BrightGreen]}Origin:${RESET}   ${monster.origin.toUpperCase()} ${DIM}[${monster.tier.toUpperCase()}]${RESET}`);
+  lines.push(`${FG[AnsiColor.BrightYellow]}Vitals:${RESET}   HP ${monster.hp}/${monster.maxHp}  |  ATK ${monster.attack}  |  DEF ${monster.defense}`);
+
+  if (monster.labels && monster.labels.length > 0) {
+    lines.push(`${FG[AnsiColor.BrightMagenta]}Labels:${RESET}   ${monster.labels.join(', ')}`);
+  }
+
+  lines.push(`${FG[AnsiColor.White]}Source:${RESET}   ${monster.sourceRef}`);
+  lines.push('');
+  lines.push(`${FG[AnsiColor.White]}${monster.description}${RESET}`);
+
+  if (monster.snippet) {
+    lines.push('');
+    lines.push(`${FG[AnsiColor.Yellow]}${CP437.DOUBLE_HORIZONTAL.repeat(4)} ARTIFACT BODY / SNIPPET ${CP437.DOUBLE_HORIZONTAL.repeat(4)}${RESET}`);
+    lines.push(`${DIM}${FG[AnsiColor.BrightBlack]}${monster.snippet}${RESET}`);
+  }
+
+  return '\r\n' + renderBox('SCAN ANALYSIS', lines.join('\r\n')) + '\r\n';
+}
+
+// ── Patch Result ──────────────────────────────────────────────────
+
+export function renderPatchResult(
+  monster: Monster,
+  damageDealt: number,
+  solved: boolean,
+  loot: string[],
+  xpEarned: number,
+): string {
+  const lines: string[] = [];
+
+  lines.push(`${BOLD}${FG[AnsiColor.BrightCyan]}${CP437.DIAMOND} PATCH COMPILATION ${CP437.DIAMOND}${RESET}`);
+  lines.push('');
+
+  if (damageDealt > 0) {
+    lines.push(
+      `${FG[AnsiColor.BrightGreen]}${CP437.STAR} Applied refactor patch to ${monster.name} dealing ${damageDealt} fix damage!${RESET}`
+    );
+  }
+
+  if (solved) {
+    lines.push('');
+    lines.push(
+      `${BOLD}${FG[AnsiColor.BrightYellow]}${CP437.STAR} DEFECT PERMANENTLY RESOLVED! (+${xpEarned} XP) ${CP437.STAR}${RESET}`
+    );
+    if (loot.length > 0) {
+      lines.push(`${FG[AnsiColor.BrightMagenta]}Loot dropped: ${loot.join(', ')}${RESET}`);
+    }
+  } else {
+    lines.push('');
+    lines.push(
+      `${FG[AnsiColor.Red]}${monster.name} remaining HP: ${monster.hp}/${monster.maxHp}${RESET}`
+    );
+  }
+
+  return '\r\n' + renderBox('PATCH SYSTEM', lines.join('\r\n')) + '\r\n';
+}
+
+// ── Spell Result ──────────────────────────────────────────────────
+
+export function renderSpellResult(
+  spellName: string,
+  message: string,
+  hpHealed?: number,
+  damageDealt?: number,
+): string {
+  const lines: string[] = [];
+
+  lines.push(`${BOLD}${FG[AnsiColor.BrightMagenta]}${CP437.STAR} COMMIT SCROLL INVOCATION ${CP437.STAR}${RESET}`);
+  lines.push('');
+  lines.push(`${FG[AnsiColor.White]}${message}${RESET}`);
+
+  if (hpHealed && hpHealed > 0) {
+    lines.push('');
+    lines.push(`${FG[AnsiColor.BrightGreen]}${CP437.HEART} Restored ${hpHealed} hit points.${RESET}`);
+  }
+
+  if (damageDealt && damageDealt > 0) {
+    lines.push('');
+    lines.push(`${FG[AnsiColor.BrightRed]}${CP437.SWORD} Dealt ${damageDealt} architectural purge damage.${RESET}`);
+  }
+
+  return '\r\n' + renderBox(`CAST ${spellName}`, lines.join('\r\n')) + '\r\n';
 }
 
 // ── Helpers ───────────────────────────────────────────────────────

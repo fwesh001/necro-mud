@@ -46,7 +46,7 @@ A multiplayer ANSI-art terminal dungeon accessible via a retro CRT web interface
 
 ### Prerequisites
 - **Node.js** ≥ 20.0.0
-- **npm** ≥ 10.0.0
+- **pnpm** ≥ 9.0.0
 
 ### Install & Run
 
@@ -56,13 +56,16 @@ git clone https://github.com/fwesh001/necro-mud.git
 cd necro-mud
 
 # Install all workspace dependencies
-npm install
+pnpm install
 
 # Build the shared types (required first)
-npm run build:shared
+pnpm run build:shared
 
 # Start both server and client in development mode
-npm run dev
+pnpm run dev
+
+# Or test backend interactively via CLI crawler
+pnpm run play
 ```
 
 ### Access

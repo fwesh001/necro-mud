@@ -14,6 +14,8 @@ export type CommandType =
   | 'SCAN'     // Analyse a monster's origin (args[0] = target)
   | 'PATCH'    // Attempt to "fix" a monster (args[0] = target)
   | 'CAST'     // Cast a spell / use a commit scroll (args[0] = spell)
+  | 'REPO'     // Load a GitHub repository into the dungeon (args[0] = owner/repo)
+  | 'TOP'      // Display the XP leaderboard and developer rankings
   | 'SAY';     // Send a chat message to the room (args = message words)
 
 export interface CommandPacket {

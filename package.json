@@ -3,22 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "description": "A multiplayer ANSI-art terminal dungeon accessible via retro CRT web interface and WebSockets — your GitHub repository is your dungeon",
-  "workspaces": [
-    "shared",
-    "server",
-    "client"
-  ],
+  "packageManager": "pnpm@11.5.1",
   "scripts": {
-    "build:shared": "npm run build -w shared",
-    "build:server": "npm run build -w server",
-    "build:client": "npm run build -w client",
-    "build": "npm run build:shared && npm run build:server && npm run build:client",
-    "dev:server": "npm run dev -w server",
-    "dev:client": "npm run dev -w client",
-    "dev": "concurrently --names SERVER,CLIENT --prefix-colors blue,green \"npm run dev:server\" \"npm run dev:client\"",
-    "typecheck": "tsc -b tsconfig.base.json && npm run typecheck -w client",
-    "start:server": "npm run start -w server",
-    "start:client": "npm run start -w client"
+    "build:shared": "pnpm --filter @necro-mud/shared build",
+    "build:server": "pnpm --filter @necro-mud/server build",
+    "build:client": "pnpm --filter @necro-mud/client build",
+    "build": "pnpm run build:shared && pnpm run build:server && pnpm run build:client",
+    "dev:server": "pnpm --filter @necro-mud/server dev",
+    "dev:client": "pnpm --filter @necro-mud/client dev",
+    "dev": "concurrently --names SERVER,CLIENT --prefix-colors blue,green \"pnpm run dev:server\" \"pnpm run dev:client\"",
+    "typecheck": "tsc -b tsconfig.base.json && pnpm --filter @necro-mud/client typecheck",
+    "start:server": "pnpm --filter @necro-mud/server start",
+    "start:client": "pnpm --filter @necro-mud/client start",
+    "test:smoke": "node server/test-smoke.mjs",
+    "play": "node server/cli.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
