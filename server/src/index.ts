@@ -10,7 +10,7 @@ import http from 'node:http';
 import { WebSocketServer } from 'ws';
 import { handleConnection } from './ws/handler.js';
 import { DungeonState } from './engine/dungeon.js';
-import { generateDungeonFromRepo } from './engine/github-parser.js';
+import { generateMockDungeon } from './engine/github-parser.js';
 import { getWelcomeBanner } from './ansi/banner.js';
 
 const PORT = parseInt(process.env.PORT ?? '4000', 10);
@@ -31,7 +31,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 // ── Dungeon Initialisation ───────────────────────────────────────────
-const { rooms, monsters } = generateDungeonFromRepo();
+const { rooms, monsters } = generateMockDungeon();
 const dungeon = new DungeonState(rooms, monsters);
 
 // ── HTTP + WebSocket Server ──────────────────────────────────────────

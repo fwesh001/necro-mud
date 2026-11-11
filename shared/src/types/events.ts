@@ -18,6 +18,7 @@ export type ServerEventType =
   | 'help-text'         // Command help listing
   | 'scan-result'       // SCAN analysis of a monster's GitHub origin
   | 'narration'         // AI Dungeon Master flavour text (future LLM hook)
+  | 'repo-loaded'       // A new GitHub repository has been converted into the dungeon
   | 'chat'              // SAY message broadcast
   | 'error';            // Error message
 

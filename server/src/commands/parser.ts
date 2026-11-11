@@ -9,16 +9,24 @@ import type { WebSocket, WebSocketServer } from 'ws';
 import type { CommandPacket } from '@necro-mud/shared';
 import { AnsiColor, CP437, FG, RESET } from '@necro-mud/shared';
 import { DungeonState } from '../engine/dungeon.js';
-import { executeCombatRound } from '../engine/combat.js';
+import {
+  executeCombatRound,
+  executePatch,
+  executeSpell,
+} from '../engine/combat.js';
+import { generateDungeonFromRepo } from '../engine/github-parser.js';
+import { generateAiNarration } from '../engine/ai-dm.js';
 import {
   renderRoomDescription,
   renderCombatResult,
   renderStatusView,
   renderMap,
   renderHelpText,
-  renderBox,
+  renderScanResult,
+  renderPatchResult,
+  renderSpellResult,
 } from '../ansi/renderer.js';
-import { sendEvent, broadcastToRoom } from '../ws/handler.js';
+import { sendEvent, broadcastToRoom, broadcastGlobal } from '../ws/handler.js';
 
 const DIRECTION_ALIASES: Record<string, string> = {
   n: 'north',
@@ -80,27 +88,15 @@ export function parseAndExecute(
       break;
 
     case 'PATCH':
-      sendEvent(ws, {
-        type: 'event',
-        event: 'narration',
-        payload: {
-          ansi: `\r\n${FG[AnsiColor.Yellow]}${CP437.DIAMOND} PATCH ritual is not yet unlocked. Slay the monster in combat or stay tuned for Wave 3!${RESET}\r\n`,
-        },
-        playerId: packet.playerId,
-        timestamp: Date.now(),
-      });
+      handlePatch(ws, wss, dungeon, packet.playerId, packet.args);
       break;
 
     case 'CAST':
-      sendEvent(ws, {
-        type: 'event',
-        event: 'narration',
-        payload: {
-          ansi: `\r\n${FG[AnsiColor.Magenta]}${CP437.STAR} You have no commit scrolls inscribed in your spellbook yet (coming in Wave 3).${RESET}\r\n`,
-        },
-        playerId: packet.playerId,
-        timestamp: Date.now(),
-      });
+      handleCast(ws, wss, dungeon, packet.playerId, packet.args);
+      break;
+
+    case 'REPO':
+      handleRepo(ws, wss, dungeon, packet.playerId, packet.args);
       break;
 
     case 'SAY':
@@ -226,6 +222,32 @@ function handleAttack(
     playerId,
     timestamp: Date.now(),
   });
+
+  // Optional background AI DM narration
+  if (
+    process.env.GEMINI_API_KEY ||
+    process.env.OPENAI_API_KEY ||
+    process.env.LLM_API_KEY
+  ) {
+    generateAiNarration(result).then((aiText) => {
+      if (aiText) {
+        broadcastToRoom(
+          wss,
+          dungeon,
+          player.currentRoomId,
+          {
+            type: 'event',
+            event: 'narration',
+            payload: {
+              ansi: `\r\n${FG[AnsiColor.Magenta]}${CP437.STAR} [DM Narrator] ${aiText}${RESET}\r\n`,
+            },
+            playerId: null,
+            timestamp: Date.now(),
+          },
+        );
+      }
+    }).catch(() => {});
+  }
 
   // Broadcast kill to other players in the room
   if (result.targetSlain) {
@@ -373,25 +395,259 @@ function handleScan(
     return;
   }
 
-  const scanBox = renderBox('SCAN RESULT', [
-    `Name:    ${monster.name}`,
-    `Origin:  ${monster.origin.toUpperCase()}`,
-    `Tier:    ${monster.tier.toUpperCase()}`,
-    `HP:      ${monster.hp}/${monster.maxHp}`,
-    `ATK:     ${monster.attack}`,
-    `DEF:     ${monster.defense}`,
-    `Source:  ${monster.sourceRef}`,
-    '',
-    monster.description,
-  ].join('\r\n'));
-
   sendEvent(ws, {
     type: 'event',
     event: 'scan-result',
-    payload: { ansi: `\r\n${scanBox}\r\n` },
+    payload: { ansi: renderScanResult(monster) },
     playerId,
     timestamp: Date.now(),
   });
+}
+
+function handlePatch(
+  ws: WebSocket,
+  wss: WebSocketServer,
+  dungeon: DungeonState,
+  playerId: string,
+  args: string[],
+): void {
+  const player = dungeon.getPlayer(playerId)!;
+
+  if (args.length === 0) {
+    sendEvent(ws, {
+      type: 'event',
+      event: 'error',
+      payload: { message: 'Patch what? Usage: PATCH <monster name>' },
+      playerId,
+      timestamp: Date.now(),
+    });
+    return;
+  }
+
+  const targetQuery = args.join(' ');
+  const monster = dungeon.findMonsterInRoom(player.currentRoomId, targetQuery);
+
+  if (!monster) {
+    sendEvent(ws, {
+      type: 'event',
+      event: 'error',
+      payload: { message: `No monster matching "${targetQuery}" found in this room.` },
+      playerId,
+      timestamp: Date.now(),
+    });
+    return;
+  }
+
+  const result = executePatch(player, monster);
+
+  if (!result.success) {
+    sendEvent(ws, {
+      type: 'event',
+      event: 'error',
+      payload: { message: result.message },
+      playerId,
+      timestamp: Date.now(),
+    });
+    return;
+  }
+
+  sendEvent(ws, {
+    type: 'event',
+    event: 'combat-result',
+    payload: {
+      ansi: renderPatchResult(
+        monster,
+        result.damageDealt,
+        result.solved,
+        result.loot,
+        result.xpEarned,
+      ),
+      patchResult: result,
+    },
+    playerId,
+    timestamp: Date.now(),
+  });
+
+  if (result.solved) {
+    broadcastToRoom(
+      wss,
+      dungeon,
+      player.currentRoomId,
+      {
+        type: 'event',
+        event: 'monster-slain',
+        payload: {
+          monsterName: monster.name,
+          slainBy: player.name,
+          xpReward: result.xpEarned,
+          ansi: `${FG[AnsiColor.BrightYellow]}${CP437.STAR} ${player.name} resolved and patched defect ${monster.name}!${RESET}\r\n`,
+        },
+        playerId: null,
+        timestamp: Date.now(),
+      },
+      playerId,
+    );
+  }
+}
+
+function handleCast(
+  ws: WebSocket,
+  wss: WebSocketServer,
+  dungeon: DungeonState,
+  playerId: string,
+  args: string[],
+): void {
+  const player = dungeon.getPlayer(playerId)!;
+
+  if (args.length === 0) {
+    sendEvent(ws, {
+      type: 'event',
+      event: 'error',
+      payload: { message: 'Cast what? Usage: CAST <hotfix|refactor|rollback> [monster]' },
+      playerId,
+      timestamp: Date.now(),
+    });
+    return;
+  }
+
+  const spellName = args[0]!.toLowerCase();
+  const targetQuery = args.slice(1).join(' ');
+  const targetMonster = targetQuery
+    ? dungeon.findMonsterInRoom(player.currentRoomId, targetQuery)
+    : dungeon.getRoomMonsters(player.currentRoomId)[0];
+
+  const result = executeSpell(player, spellName, targetMonster);
+
+  if (!result.success) {
+    sendEvent(ws, {
+      type: 'event',
+      event: 'error',
+      payload: { message: result.message },
+      playerId,
+      timestamp: Date.now(),
+    });
+    return;
+  }
+
+  sendEvent(ws, {
+    type: 'event',
+    event: 'narration',
+    payload: {
+      ansi: renderSpellResult(
+        result.spellName,
+        result.message,
+        result.hpHealed,
+        result.damageDealt,
+      ),
+      spellResult: result,
+    },
+    playerId,
+    timestamp: Date.now(),
+  });
+
+  if (result.targetSlain && targetMonster) {
+    broadcastToRoom(
+      wss,
+      dungeon,
+      player.currentRoomId,
+      {
+        type: 'event',
+        event: 'monster-slain',
+        payload: {
+          monsterName: targetMonster.name,
+          slainBy: player.name,
+          xpReward: targetMonster.xpReward,
+          ansi: `${FG[AnsiColor.BrightYellow]}${CP437.STAR} ${player.name} refactored ${targetMonster.name} out of existence!${RESET}\r\n`,
+        },
+        playerId: null,
+        timestamp: Date.now(),
+      },
+      playerId,
+    );
+  }
+}
+
+async function handleRepo(
+  ws: WebSocket,
+  wss: WebSocketServer,
+  dungeon: DungeonState,
+  playerId: string,
+  args: string[],
+): Promise<void> {
+  const player = dungeon.getPlayer(playerId)!;
+
+  if (args.length === 0) {
+    sendEvent(ws, {
+      type: 'event',
+      event: 'error',
+      payload: { message: 'Load which repository? Usage: REPO <owner/repo>' },
+      playerId,
+      timestamp: Date.now(),
+    });
+    return;
+  }
+
+  const repoTarget = args[0]!.trim();
+  const parts = repoTarget.split('/');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    sendEvent(ws, {
+      type: 'event',
+      event: 'error',
+      payload: {
+        message: 'Invalid repository format. Please use "owner/repo" (e.g. "fwesh001/necro-mud").',
+      },
+      playerId,
+      timestamp: Date.now(),
+    });
+    return;
+  }
+
+  const [owner, repo] = parts as [string, string];
+
+  sendEvent(ws, {
+    type: 'event',
+    event: 'narration',
+    payload: {
+      ansi: `\r\n${FG[AnsiColor.BrightYellow]}${CP437.SPADE} Commencing GitHub ritual for ${owner}/${repo}...\r\n${CP437.ARROW_RIGHT} Parsing repository tree and issues...${RESET}\r\n`,
+    },
+    playerId,
+    timestamp: Date.now(),
+  });
+
+  const { rooms, monsters } = await generateDungeonFromRepo({
+    owner,
+    repo,
+    token: process.env.GITHUB_TOKEN,
+  });
+
+  dungeon.loadDungeon(rooms, monsters);
+
+  broadcastGlobal(wss, {
+    type: 'event',
+    event: 'repo-loaded',
+    payload: {
+      owner,
+      repo,
+      roomCount: rooms.length,
+      monsterCount: monsters.length,
+      ansi: `\r\n${FG[AnsiColor.BrightGreen]}${CP437.DOUBLE_HORIZONTAL.repeat(4)} REALITY SHIFTS! ${CP437.DOUBLE_HORIZONTAL.repeat(4)}${RESET}\r\n${FG[AnsiColor.BrightYellow]}${player.name} transformed the dungeon into:\r\n  ${owner}/${repo}!${RESET}\r\n${FG[AnsiColor.Cyan]}${rooms.length} rooms generated, ${monsters.length} monsters materialized.${RESET}\r\n`,
+    },
+    playerId: null,
+    timestamp: Date.now(),
+  });
+
+  const entrance = dungeon.getRoom('entrance');
+  if (entrance) {
+    const entranceMonsters = dungeon.getRoomMonsters('entrance');
+    const otherPlayers = dungeon.getRoomPlayers('entrance').filter(p => p.id !== playerId);
+    sendEvent(ws, {
+      type: 'event',
+      event: 'room-description',
+      payload: { ansi: renderRoomDescription(entrance, entranceMonsters, otherPlayers) },
+      playerId,
+      timestamp: Date.now(),
+    });
+  }
 }
 
 function handleSay(

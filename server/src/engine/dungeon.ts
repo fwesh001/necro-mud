@@ -35,6 +35,35 @@ export class DungeonState {
     return Array.from(this.rooms.values());
   }
 
+  /**
+   * Hot-swap the entire dungeon with new rooms and monsters.
+   * Teleports all active players safely to 'entrance' and resets their visited state.
+   */
+  loadDungeon(rooms: Room[], monsters: Monster[]): void {
+    this.rooms.clear();
+    this.monsters.clear();
+
+    for (const room of rooms) {
+      this.rooms.set(room.id, room);
+    }
+    for (const monster of monsters) {
+      this.monsters.set(monster.id, monster);
+    }
+
+    const entrance = this.rooms.get('entrance');
+    for (const player of this.players.values()) {
+      player.currentRoomId = 'entrance';
+      player.visitedRooms = ['entrance'];
+      if (entrance && !entrance.playerIds.includes(player.id)) {
+        entrance.playerIds.push(player.id);
+      }
+    }
+
+    if (entrance) {
+      entrance.discovered = true;
+    }
+  }
+
   // ── Monster Operations ───────────────────────────────────────────
 
   getMonster(id: string): Monster | undefined {

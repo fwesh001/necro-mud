@@ -64,10 +64,10 @@ Backend — owned primarily by **Samkiel**.
 
 ## Wave 3+ — Future Enhancements (Post-Scaffold)
 
-- [ ] 3+.1 Live GitHub REST/Octokit integration (replace mock parser)
-- [ ] 3+.2 LLM-powered AI Dungeon Master narrator (plug into CombatNarrationHook)
-- [ ] 3+.3 PATCH command implementation (resolve issues via game actions)
-- [ ] 3+.4 CAST command implementation (commit scrolls as spells)
+- [x] 3+.1 Live GitHub REST/Octokit integration (replace mock parser)
+- [x] 3+.2 LLM-powered AI Dungeon Master narrator (plug into CombatNarrationHook)
+- [x] 3+.3 PATCH command implementation (resolve issues via game actions)
+- [x] 3+.4 CAST command implementation (commit scrolls as spells)
 - [ ] 3+.5 Raw Telnet bridge (`net.createServer` on port 2323)
 - [x] 3+.6 WebAudio 8-bit chiptune and modem SFX synthesis
 - [ ] 3+.7 Player persistence (save/load state)

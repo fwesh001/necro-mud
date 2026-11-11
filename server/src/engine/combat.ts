@@ -7,33 +7,14 @@
  */
 
 import type { Player, Monster, CombatResultPayload } from '@necro-mud/shared';
+import { getDeterministicGothicNarration } from './ai-dm.js';
 
 /** Event hook type — called after each combat round for narration injection */
 export type CombatNarrationHook = (result: CombatResultPayload) => string;
 
-/** Default narration generator (deterministic, no LLM required) */
+/** Default narration generator using the Gothic AI-DM engine */
 const defaultNarration: CombatNarrationHook = (result) => {
-  const lines: string[] = [];
-
-  if (result.damageDealt > 0) {
-    lines.push(`You strike ${result.targetName} for ${result.damageDealt} damage!`);
-  } else {
-    lines.push(`Your attack glances off ${result.targetName}'s defenses!`);
-  }
-
-  if (result.damageReceived > 0) {
-    lines.push(`${result.targetName} retaliates for ${result.damageReceived} damage!`);
-  } else {
-    lines.push(`${result.targetName}'s counterattack misses!`);
-  }
-
-  if (result.targetSlain) {
-    lines.push(`☠ ${result.targetName} has been vanquished! The bug is squashed!`);
-  }
-
-  lines.push(`Your HP: ${result.attackerHp} | ${result.targetName} HP: ${result.targetHp}`);
-
-  return lines.join('\r\n');
+  return getDeterministicGothicNarration(result);
 };
 
 /** Simple seeded random for deterministic testing (uses Math.random in practice) */
@@ -95,5 +76,164 @@ export function executeCombatRound(
   result.narration = narrationHook(result);
 
   return result;
+}
+
+export interface PatchResult {
+  success: boolean;
+  message: string;
+  damageDealt: number;
+  solved: boolean;
+  xpEarned: number;
+  loot: string[];
+}
+
+/**
+ * Attempt to apply an interactive bug fix / patch to an entity.
+ */
+export function executePatch(player: Player, monster: Monster): PatchResult {
+  if (monster.origin === 'complexity') {
+    return {
+      success: false,
+      message: 'Architectural complexity cannot be patched inline! Slay it in combat or cast REFACTOR.',
+      damageDealt: 0,
+      solved: false,
+      xpEarned: 0,
+      loot: [],
+    };
+  }
+
+  const baseFix = rollDice(8) + 16;
+  const damageDealt = Math.min(monster.hp, baseFix);
+  monster.hp = Math.max(0, monster.hp - damageDealt);
+  const solved = monster.hp <= 0;
+
+  let xpEarned = 0;
+  const loot: string[] = [];
+
+  if (solved) {
+    monster.alive = false;
+    xpEarned = monster.xpReward + 5;
+    player.xp += xpEarned;
+
+    const drop =
+      monster.origin === 'bug'
+        ? 'scroll-hotfix'
+        : monster.origin === 'ci-failure'
+        ? 'scroll-rollback'
+        : 'scroll-refactor';
+    loot.push(drop);
+    if (!player.inventory.includes(drop)) {
+      player.inventory.push(drop);
+    }
+  }
+
+  return {
+    success: true,
+    message: solved
+      ? `Patch applied successfully! The defect is permanently resolved.`
+      : `Patch applied, mitigating the bug for ${damageDealt} fix damage.`,
+    damageDealt,
+    solved,
+    xpEarned,
+    loot,
+  };
+}
+
+export interface SpellResult {
+  success: boolean;
+  spellName: string;
+  message: string;
+  hpHealed?: number;
+  damageDealt?: number;
+  targetSlain?: boolean;
+}
+
+/**
+ * Cast a commit scroll spell (HOTFIX, REFACTOR, ROLLBACK).
+ */
+export function executeSpell(
+  player: Player,
+  rawSpell: string,
+  target?: Monster,
+): SpellResult {
+  const spell = rawSpell.trim().toLowerCase();
+
+  switch (spell) {
+    case 'hotfix': {
+      const scrollIndex = player.inventory.indexOf('scroll-hotfix');
+      const hasScroll = scrollIndex !== -1;
+      if (hasScroll) {
+        player.inventory.splice(scrollIndex, 1);
+      }
+      const healAmount = hasScroll ? 45 : 25;
+      const prevHp = player.hp;
+      player.hp = Math.min(player.maxHp, player.hp + healAmount);
+      const actualHealed = player.hp - prevHp;
+      return {
+        success: true,
+        spellName: 'HOTFIX',
+        message: hasScroll
+          ? `You invoke a commit scroll: HOTFIX! Critical patch deployed. Restored ${actualHealed} HP.`
+          : `You quickly deploy a dirty HOTFIX. Restored ${actualHealed} HP.`,
+        hpHealed: actualHealed,
+      };
+    }
+
+    case 'refactor': {
+      if (!target) {
+        return {
+          success: false,
+          spellName: 'REFACTOR',
+          message: 'Refactor what? Usage: CAST refactor <monster>',
+        };
+      }
+      const scrollIndex = player.inventory.indexOf('scroll-refactor');
+      const hasScroll = scrollIndex !== -1;
+      if (hasScroll) {
+        player.inventory.splice(scrollIndex, 1);
+      }
+      const damage = hasScroll ? 45 : 30;
+      target.hp = Math.max(0, target.hp - damage);
+      const targetSlain = target.hp <= 0;
+      if (targetSlain) {
+        target.alive = false;
+        player.xp += target.xpReward;
+      }
+      return {
+        success: true,
+        spellName: 'REFACTOR',
+        message: hasScroll
+          ? `You unleash a master REFACTOR scroll! Tangled logic unravels for ${damage} architectural damage!`
+          : `You execute a clean REFACTOR, dealing ${damage} damage to ${target.name}.`,
+        damageDealt: damage,
+        targetSlain,
+      };
+    }
+
+    case 'rollback': {
+      const scrollIndex = player.inventory.indexOf('scroll-rollback');
+      const hasScroll = scrollIndex !== -1;
+      if (hasScroll) {
+        player.inventory.splice(scrollIndex, 1);
+      }
+      const heal = hasScroll ? 25 : 15;
+      player.hp = Math.min(player.maxHp, player.hp + heal);
+      return {
+        success: true,
+        spellName: 'ROLLBACK',
+        message: hasScroll
+          ? `You invoke ROLLBACK! State restored to last clean commit (+${heal} HP and shielding).`
+          : `You perform a quick git checkout. State restored (+${heal} HP).`,
+        hpHealed: heal,
+      };
+    }
+
+    default:
+      return {
+        success: false,
+        spellName: rawSpell.toUpperCase(),
+        message: `Unknown spell "${rawSpell}". Available spells: HOTFIX, REFACTOR, ROLLBACK.`,
+      };
+  }
 }
 
