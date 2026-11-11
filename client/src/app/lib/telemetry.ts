@@ -329,3 +329,4 @@ export function parsePatchTargetName(ansi: string): string | null {
   const match = clean.match(/Applied refactor patch to (.+?) dealing \d+ fix damage!/);
   return match ? match[1]!.trim() : null;
 }
+
