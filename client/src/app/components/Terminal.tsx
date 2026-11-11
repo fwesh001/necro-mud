@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useCallback } from 'react';
-import { Terminal as XTerm } from '@xterm/xterm';
+import { Terminal as XTerm, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import {
@@ -10,18 +10,75 @@ import {
   type CommandType,
   type ServerEventPacket,
 } from '@necro-mud/shared';
+import type { PhosphorMode } from './CrtBezel';
+import type { ConnectionState } from './TacticalHud';
+import { getSoundEngine } from '../lib/sound-engine';
+
+const PHOSPHOR_XTERM_THEMES: Record<PhosphorMode, ITheme> = {
+  vga: { ...VGA_THEME },
+  green: {
+    ...VGA_THEME,
+    background: '#020502',
+    foreground: '#55FF55',
+    cursor: '#00FF41',
+    white: '#33CC33',
+    brightWhite: '#77FF77',
+    cyan: '#22BB44',
+    brightCyan: '#00FF41',
+    yellow: '#88DD22',
+    brightYellow: '#AAFF44',
+  },
+  amber: {
+    ...VGA_THEME,
+    background: '#050300',
+    foreground: '#FFB000',
+    cursor: '#FFD066',
+    white: '#DD8800',
+    brightWhite: '#FFD277',
+    cyan: '#CC7700',
+    brightCyan: '#FFB000',
+    green: '#EE9900',
+    brightGreen: '#FFCC33',
+    yellow: '#FFAA00',
+    brightYellow: '#FFE066',
+  },
+  blood: {
+    ...VGA_THEME,
+    background: '#050002',
+    foreground: '#FF6688',
+    cursor: '#FF3366',
+    white: '#CC4466',
+    brightWhite: '#FF99B3',
+    cyan: '#BB2255',
+    brightCyan: '#FF3366',
+    green: '#EE4477',
+    brightGreen: '#FF5588',
+    yellow: '#FF6644',
+    brightYellow: '#FFAA88',
+  },
+};
 
 interface TerminalProps {
   wsUrl: string;
+  phosphorMode: PhosphorMode;
+  onServerEvent?: (packet: ServerEventPacket) => void;
+  onConnectionChange?: (state: ConnectionState, latencyMs?: number | null) => void;
+  onRegisterSender?: (sendFn: (rawCommand: string) => void) => void;
 }
 
 /**
  * Terminal — XTerm.js terminal component with WebSocket connection.
  *
- * Connects to the Necro-MUD server, displays ANSI output,
- * and sends typed CommandPackets. Includes exponential-backoff reconnection.
+ * Connects to the Necro-MUD server, displays ANSI output in an 80x24 grid,
+ * triggers WebAudio keystroke/event SFX, and feeds telemetry to TacticalHud.
  */
-export function Terminal({ wsUrl }: TerminalProps) {
+export function Terminal({
+  wsUrl,
+  phosphorMode,
+  onServerEvent,
+  onConnectionChange,
+  onRegisterSender,
+}: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<{ terminal: XTerm; fitAddon: FitAddon } | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -32,6 +89,16 @@ export function Terminal({ wsUrl }: TerminalProps) {
   const promptShownRef = useRef(false);
   const unmountedRef = useRef(false);
   const commandBufferRef = useRef('');
+  const lastCommandSentAtRef = useRef<number | null>(null);
+
+  const onServerEventRef = useRef(onServerEvent);
+  onServerEventRef.current = onServerEvent;
+
+  const onConnectionChangeRef = useRef(onConnectionChange);
+  onConnectionChangeRef.current = onConnectionChange;
+
+  const onRegisterSenderRef = useRef(onRegisterSender);
+  onRegisterSenderRef.current = onRegisterSender;
 
   const schedulePrompt = useCallback((terminal: XTerm) => {
     if (promptTimerRef.current) {
@@ -45,6 +112,57 @@ export function Terminal({ wsUrl }: TerminalProps) {
       }
     }, 30);
   }, []);
+
+  const dispatchCommand = useCallback((rawInput: string, echoToTerminal: boolean) => {
+    const trimmed = rawInput.trim();
+    if (!trimmed) return;
+
+    const terminal = xtermRef.current?.terminal;
+    const ws = wsRef.current;
+
+    if (echoToTerminal && terminal) {
+      if (promptShownRef.current) {
+        terminal.write('\r\x1b[2K');
+        promptShownRef.current = false;
+      }
+      terminal.writeln(`\x1b[1;33m> \x1b[0m${trimmed}`);
+      commandBufferRef.current = '';
+      terminal.focus();
+    }
+
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      const parts = trimmed.split(/\s+/);
+      const packet: CommandPacket = {
+        type: 'command',
+        command: (parts[0] ?? '').toUpperCase() as CommandType,
+        args: parts.slice(1),
+        playerId: playerIdRef.current,
+        timestamp: Date.now(),
+      };
+      lastCommandSentAtRef.current = performance.now();
+      ws.send(JSON.stringify(packet));
+    } else if (terminal) {
+      terminal.writeln('\x1b[31mNot connected to server.\x1b[0m');
+      terminal.write('\x1b[1;33m> \x1b[0m');
+      promptShownRef.current = true;
+    }
+  }, []);
+
+  // Register sender callback for TacticalHud macro keys & repo loader
+  useEffect(() => {
+    onRegisterSenderRef.current?.((rawCmd: string) => {
+      getSoundEngine().unlock();
+      getSoundEngine().playKeystroke();
+      dispatchCommand(rawCmd, true);
+    });
+  }, [dispatchCommand]);
+
+  // Apply phosphor mode changes live to XTerm theme
+  useEffect(() => {
+    if (xtermRef.current) {
+      xtermRef.current.terminal.options.theme = PHOSPHOR_XTERM_THEMES[phosphorMode];
+    }
+  }, [phosphorMode]);
 
   const scheduleReconnect = useCallback((terminal: XTerm, connectFn: (t: XTerm) => void) => {
     if (unmountedRef.current) return;
@@ -62,6 +180,7 @@ export function Terminal({ wsUrl }: TerminalProps) {
 
   const connect = useCallback((terminal: XTerm) => {
     if (unmountedRef.current) return;
+    onConnectionChangeRef.current?.('connecting', null);
 
     try {
       const ws = new WebSocket(wsUrl);
@@ -70,6 +189,7 @@ export function Terminal({ wsUrl }: TerminalProps) {
       ws.onopen = () => {
         reconnectAttemptRef.current = 0;
         promptShownRef.current = false;
+        onConnectionChangeRef.current?.('connected', 0);
         terminal.writeln('\r\n\x1b[1;32m✓ Connected to Necro-MUD server\x1b[0m\r\n');
       };
 
@@ -79,9 +199,18 @@ export function Terminal({ wsUrl }: TerminalProps) {
           if (packet.type === 'event') {
             const payload = packet.payload;
 
+            if (lastCommandSentAtRef.current !== null) {
+              const rtt = Math.max(1, Math.round(performance.now() - lastCommandSentAtRef.current));
+              lastCommandSentAtRef.current = null;
+              onConnectionChangeRef.current?.('connected', rtt);
+            }
+
             if (packet.event === 'welcome' && typeof payload.playerId === 'string') {
               playerIdRef.current = payload.playerId;
             }
+
+            onServerEventRef.current?.(packet);
+            getSoundEngine().playEventSfx(packet.event);
 
             // Clear active prompt line if async output arrives mid-typing
             if (promptShownRef.current) {
@@ -112,6 +241,7 @@ export function Terminal({ wsUrl }: TerminalProps) {
 
       ws.onclose = () => {
         promptShownRef.current = false;
+        onConnectionChangeRef.current?.('disconnected', null);
         if (!unmountedRef.current) {
           terminal.writeln('\r\n\x1b[1;31m✗ Disconnected from server\x1b[0m');
           scheduleReconnect(terminal, connect);
@@ -119,9 +249,10 @@ export function Terminal({ wsUrl }: TerminalProps) {
       };
 
       ws.onerror = () => {
-        // onclose will handle reconnection
+        // onclose handles reconnection
       };
     } catch {
+      onConnectionChangeRef.current?.('disconnected', null);
       terminal.writeln('\r\n\x1b[1;31m✗ Failed to connect\x1b[0m');
       scheduleReconnect(terminal, connect);
     }
@@ -134,7 +265,7 @@ export function Terminal({ wsUrl }: TerminalProps) {
     const terminal = new XTerm({
       cursorBlink: true,
       cursorStyle: 'block',
-      theme: { ...VGA_THEME },
+      theme: PHOSPHOR_XTERM_THEMES[phosphorMode],
       fontSize: 14,
       fontFamily: '"Courier New", "Lucida Console", Monaco, monospace',
       cols: 80,
@@ -149,34 +280,27 @@ export function Terminal({ wsUrl }: TerminalProps) {
 
     requestAnimationFrame(() => {
       fitAddon.fit();
+      terminal.focus();
     });
 
     xtermRef.current = { terminal, fitAddon };
 
     const inputDisposable = terminal.onData((data) => {
+      const sound = getSoundEngine();
+      sound.unlock();
+
       const code = data.charCodeAt(0);
 
       // Enter key
       if (code === 13) {
+        sound.playKeystroke();
         terminal.write('\r\n');
         promptShownRef.current = false;
         const rawInput = commandBufferRef.current.trim();
         commandBufferRef.current = '';
 
-        if (rawInput && wsRef.current?.readyState === WebSocket.OPEN) {
-          const parts = rawInput.split(/\s+/);
-          const packet: CommandPacket = {
-            type: 'command',
-            command: (parts[0] ?? '').toUpperCase() as CommandType,
-            args: parts.slice(1),
-            playerId: playerIdRef.current,
-            timestamp: Date.now(),
-          };
-          wsRef.current.send(JSON.stringify(packet));
-        } else if (rawInput) {
-          terminal.writeln('\x1b[31mNot connected to server.\x1b[0m');
-          terminal.write('\x1b[1;33m> \x1b[0m');
-          promptShownRef.current = true;
+        if (rawInput) {
+          dispatchCommand(rawInput, false);
         } else {
           terminal.write('\x1b[1;33m> \x1b[0m');
           promptShownRef.current = true;
@@ -184,6 +308,7 @@ export function Terminal({ wsUrl }: TerminalProps) {
       }
       // Backspace
       else if (code === 127) {
+        sound.playKeystroke();
         if (commandBufferRef.current.length > 0) {
           commandBufferRef.current = commandBufferRef.current.slice(0, -1);
           terminal.write('\b \b');
@@ -191,6 +316,7 @@ export function Terminal({ wsUrl }: TerminalProps) {
       }
       // Printable ASCII characters
       else if (code >= 32 && code !== 127 && !data.startsWith('\x1b')) {
+        sound.playKeystroke();
         commandBufferRef.current += data;
         terminal.write(data);
       }
@@ -211,12 +337,12 @@ export function Terminal({ wsUrl }: TerminalProps) {
       terminal.dispose();
       xtermRef.current = null;
     };
-  }, [connect]);
+  }, [connect, dispatchCommand]); // phosphorMode handled via dedicated theme effect
 
   return (
     <div
       ref={containerRef}
-      className="w-full h-full min-h-[70vh] p-2"
+      className="w-full h-full min-h-[68vh] p-2"
       style={{ background: 'transparent' }}
     />
   );
