@@ -21,7 +21,7 @@ Foundation layer. Must complete before Wave 2 or Wave 3.
 - [x] 1.12 Create barrel export `shared/src/index.ts`
 - [x] 1.13 Create `.kiro/steering/product.md` (vision, lore, mapping)
 - [x] 1.14 Create `.kiro/steering/tech.md` (full tech stack)
-- [x] 1.15 Create `.kiro/steering/structure.md` (monorepo layout, Zabdiel+Eke ownership)
+- [x] 1.15 Create `.kiro/steering/structure.md` (monorepo layout, Zabdiel+Samkiel ownership)
 - [x] 1.16 Create `.kiro/specs/necro-mud-core/requirements.md` (EARS notation)
 - [x] 1.17 Create `.kiro/specs/necro-mud-core/design.md` (architecture, state machine, protocol)
 - [x] 1.18 Create `.kiro/specs/necro-mud-core/tasks.md` (this file)
@@ -43,9 +43,12 @@ Frontend — owned primarily by **Zabdiel**.
 - [x] 2.9 Create `CrtBezel.tsx` component (CRT monitor frame, power LED, label)
 - [x] 2.10 Create `Terminal.tsx` component (XTerm.js + WebSocket client + reconnection)
 - [x] 2.11 Create `BootSequence.tsx` component (modem dial-up animation, AT commands)
+- [x] 2.12 Build procedural WebAudio `RetroSoundEngine` (`client/src/app/lib/sound-engine.ts`) with modem handshake, mechanical keystrokes, degauss thump, 8-bit event SFX, and 60Hz CRT hum
+- [x] 2.13 Upgrade `CrtBezel.tsx` & `globals.css` with 4 phosphor modes (`P1-GRN`, `P3-AMB`, `BLOOD`, `VGA-16`), 900ms degauss warp animation, cathode power collapse, and scanline/flicker intensity toggles
+- [x] 2.14 Build collapsible `TacticalHud.tsx` hardware deck (live vitals LEDs, monster target selector, macro keycaps, and repo loader bar)
 
 ## Wave 3 — MUD Engine, GitHub Repo Parser & AI Dungeon Master
-Backend — owned primarily by **Eke**.
+Backend — owned primarily by **Samkiel**.
 
 - [x] 3.1 Create `server/package.json` with Express 5, ws, tsx
 - [x] 3.2 Create `server/tsconfig.json` extending base config
@@ -66,7 +69,7 @@ Backend — owned primarily by **Eke**.
 - [ ] 3+.3 PATCH command implementation (resolve issues via game actions)
 - [ ] 3+.4 CAST command implementation (commit scrolls as spells)
 - [ ] 3+.5 Raw Telnet bridge (`net.createServer` on port 2323)
-- [ ] 3+.6 WebAudio 8-bit chiptune and modem SFX synthesis
+- [x] 3+.6 WebAudio 8-bit chiptune and modem SFX synthesis
 - [ ] 3+.7 Player persistence (save/load state)
 - [ ] 3+.8 Leaderboard and XP ranking system
 
