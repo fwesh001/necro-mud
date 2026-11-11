@@ -3,35 +3,95 @@
 @theme {
   --color-crt-green: #00FF41;
   --color-crt-amber: #FFB000;
+  --color-crt-blood: #FF3366;
   --color-crt-dark: #0a0a0a;
   --color-crt-bezel: #1a1a1a;
   --color-crt-bezel-light: #2a2a2a;
-  --shadow-crt-inner: inset 0 0 60px rgba(0, 255, 65, 0.05), inset 0 0 120px rgba(0, 0, 0, 0.3);
-  --shadow-crt-outer: 0 0 20px rgba(0, 255, 65, 0.1), 0 0 60px rgba(0, 0, 0, 0.5);
+  --shadow-crt-inner: inset 0 0 60px rgba(0, 255, 65, 0.05), inset 0 0 120px rgba(0, 0, 0, 0.35);
+  --shadow-crt-outer: 0 0 24px rgba(0, 255, 65, 0.12), 0 0 60px rgba(0, 0, 0, 0.65);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
    NECRO-MUD — CRT Terminal Stylesheet
-   Authentic 1990s CRT monitor aesthetic with scanlines, phosphor
-   glow, screen curvature, and flicker effects.
+   Authentic 1980s/1990s CRT monitor aesthetic with 4 phosphor modes,
+   scanline intensity presets, degauss coil warp, and cathode collapse.
    ═══════════════════════════════════════════════════════════════════ */
-
-/* ── Base ─────────────────────────────────────────────────────────── */
 
 :root {
   --crt-green: #00FF41;
   --crt-amber: #FFB000;
-  --crt-dark: #0a0a0a;
-  --crt-scanline-opacity: 0.12;
-  --crt-glow-radius: 8px;
+  --crt-blood: #FF3366;
+  --crt-accent: #00FF41;
+  --crt-accent-dim: rgba(0, 255, 65, 0.35);
+  --crt-glow-soft: rgba(0, 255, 65, 0.25);
+  --crt-glow-strong: rgba(0, 255, 65, 0.55);
+  --crt-screen-bg: radial-gradient(ellipse at center, #0a110a 0%, #020502 100%);
+  --crt-vignette-edge: rgba(0, 0, 0, 0.45);
+  --crt-scanline-opacity: 0.16;
+  --crt-noise-opacity: 0.035;
+}
+
+/* ── 4 Phosphor Mode Palettes ─────────────────────────────────────── */
+
+[data-phosphor="green"] {
+  --crt-accent: #00FF41;
+  --crt-accent-dim: rgba(0, 255, 65, 0.35);
+  --crt-glow-soft: rgba(0, 255, 65, 0.25);
+  --crt-glow-strong: rgba(0, 255, 65, 0.55);
+  --crt-screen-bg: radial-gradient(ellipse at center, #081208 0%, #020502 100%);
+  --crt-vignette-edge: rgba(0, 12, 3, 0.5);
+}
+
+[data-phosphor="amber"] {
+  --crt-accent: #FFB000;
+  --crt-accent-dim: rgba(255, 176, 0, 0.35);
+  --crt-glow-soft: rgba(255, 176, 0, 0.25);
+  --crt-glow-strong: rgba(255, 176, 0, 0.55);
+  --crt-screen-bg: radial-gradient(ellipse at center, #140d02 0%, #050300 100%);
+  --crt-vignette-edge: rgba(18, 9, 0, 0.5);
+}
+
+[data-phosphor="blood"] {
+  --crt-accent: #FF3366;
+  --crt-accent-dim: rgba(255, 51, 102, 0.38);
+  --crt-glow-soft: rgba(255, 51, 102, 0.28);
+  --crt-glow-strong: rgba(255, 51, 102, 0.6);
+  --crt-screen-bg: radial-gradient(ellipse at center, #17040b 0%, #050002 100%);
+  --crt-vignette-edge: rgba(38, 0, 12, 0.62);
+}
+
+[data-phosphor="vga"] {
+  --crt-accent: #55FFFF;
+  --crt-accent-dim: rgba(85, 255, 255, 0.35);
+  --crt-glow-soft: rgba(85, 255, 255, 0.18);
+  --crt-glow-strong: rgba(85, 255, 255, 0.38);
+  --crt-screen-bg: radial-gradient(ellipse at center, #070a10 0%, #010204 100%);
+  --crt-vignette-edge: rgba(0, 0, 0, 0.42);
+}
+
+/* ── CRT Intensity Presets ────────────────────────────────────────── */
+
+[data-crt-intensity="high"] {
+  --crt-scanline-opacity: 0.2;
+  --crt-noise-opacity: 0.04;
+}
+
+[data-crt-intensity="low"] {
+  --crt-scanline-opacity: 0.08;
+  --crt-noise-opacity: 0.015;
+}
+
+[data-crt-intensity="off"] {
+  --crt-scanline-opacity: 0;
+  --crt-noise-opacity: 0;
 }
 
 html, body {
-  background-color: #000;
-  color: var(--crt-green);
-  overflow: hidden;
-  height: 100vh;
-  width: 100vw;
+  background-color: #030303;
+  color: var(--crt-accent);
+  overflow-x: hidden;
+  min-height: 100vh;
+  width: 100%;
 }
 
 /* ── CRT Scanline Overlay ─────────────────────────────────────────── */
@@ -59,10 +119,9 @@ html, body {
 
 .crt-glow {
   text-shadow:
-    0 0 3px rgba(0, 255, 65, 0.5),
-    0 0 8px rgba(0, 255, 65, 0.3),
-    0 0 16px rgba(0, 255, 65, 0.15),
-    0 0 32px rgba(0, 255, 65, 0.05);
+    0 0 3px var(--crt-glow-strong),
+    0 0 8px var(--crt-glow-soft),
+    0 0 18px var(--crt-glow-soft);
 }
 
 /* ── CRT Flicker ──────────────────────────────────────────────────── */
@@ -71,23 +130,26 @@ html, body {
   animation: crt-flicker 0.15s infinite;
 }
 
-@keyframes crt-flicker {
-  0%   { opacity: 0.97; }
-  2%   { opacity: 0.94; }
-  4%   { opacity: 0.98; }
-  8%   { opacity: 0.96; }
-  70%  { opacity: 0.975; }
-  100% { opacity: 0.97; }
+[data-crt-intensity="low"] .crt-flicker,
+[data-crt-intensity="off"] .crt-flicker {
+  animation: none;
 }
 
-/* ── CRT Screen Curvature ─────────────────────────────────────────── */
+@keyframes crt-flicker {
+  0%   { opacity: 0.975; }
+  2%   { opacity: 0.945; }
+  4%   { opacity: 0.985; }
+  8%   { opacity: 0.96; }
+  70%  { opacity: 0.98; }
+  100% { opacity: 0.975; }
+}
+
+/* ── CRT Screen Curvature & Vignette ──────────────────────────────── */
 
 .crt-curve {
   border-radius: 18px;
   overflow: hidden;
 }
-
-/* ── Vignette (darkened edges like a real CRT) ────────────────────── */
 
 .crt-vignette::before {
   content: '';
@@ -95,11 +157,104 @@ html, body {
   inset: 0;
   background: radial-gradient(
     ellipse at center,
-    transparent 60%,
-    rgba(0, 0, 0, 0.4) 100%
+    transparent 58%,
+    var(--crt-vignette-edge) 100%
   );
   pointer-events: none;
   z-index: 11;
+}
+
+[data-crt-intensity="off"] .crt-vignette::before {
+  opacity: 0.25;
+}
+
+/* ── Degauss Coil Warp & Chromatic Aberration (900ms) ─────────────── */
+
+.crt-degauss-active {
+  animation: crt-degauss 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes crt-degauss {
+  0% {
+    transform: scale(1) skewX(0deg);
+    filter: hue-rotate(0deg) saturate(1);
+  }
+  12% {
+    transform: scale(1.03, 0.97) skewX(3deg);
+    filter: hue-rotate(110deg) saturate(2.5) drop-shadow(-4px 0 0 rgba(255, 0, 80, 0.7)) drop-shadow(4px 0 0 rgba(0, 255, 255, 0.7));
+  }
+  28% {
+    transform: scale(0.98, 1.02) skewX(-2.5deg);
+    filter: hue-rotate(-95deg) saturate(2.1) drop-shadow(3px 0 0 rgba(255, 0, 80, 0.55)) drop-shadow(-3px 0 0 rgba(0, 255, 255, 0.55));
+  }
+  48% {
+    transform: scale(1.012, 0.992) skewX(1.2deg);
+    filter: hue-rotate(45deg) saturate(1.6) drop-shadow(-2px 0 0 rgba(255, 0, 80, 0.35)) drop-shadow(2px 0 0 rgba(0, 255, 255, 0.35));
+  }
+  72% {
+    transform: scale(0.996, 1.004) skewX(-0.5deg);
+    filter: hue-rotate(-15deg) saturate(1.2);
+  }
+  100% {
+    transform: scale(1) skewX(0deg);
+    filter: hue-rotate(0deg) saturate(1);
+  }
+}
+
+/* ── Cathode Power Collapse & Warm-up ─────────────────────────────── */
+
+.crt-power-collapsing {
+  animation: crt-collapse 0.45s cubic-bezier(0.55, 0, 0.85, 0.35) forwards;
+}
+
+.crt-power-off {
+  transform: scaleY(0) scaleX(0);
+  opacity: 0;
+}
+
+.crt-power-warming {
+  animation: crt-warmup 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes crt-collapse {
+  0% {
+    transform: scaleY(1) scaleX(1);
+    filter: brightness(1);
+    opacity: 1;
+  }
+  45% {
+    transform: scaleY(0.015) scaleX(0.98);
+    filter: brightness(3.2);
+    opacity: 1;
+  }
+  80% {
+    transform: scaleY(0.012) scaleX(0.03);
+    filter: brightness(4);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleY(0) scaleX(0);
+    filter: brightness(0);
+    opacity: 0;
+  }
+}
+
+@keyframes crt-warmup {
+  0% {
+    transform: scaleY(0.01) scaleX(0.05);
+    filter: brightness(3);
+    opacity: 0.4;
+  }
+  45% {
+    transform: scaleY(0.025) scaleX(1);
+    filter: brightness(2.2);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleY(1) scaleX(1);
+    filter: brightness(1);
+    opacity: 1;
+  }
 }
 
 /* ── Power LED ────────────────────────────────────────────────────── */
@@ -108,14 +263,22 @@ html, body {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background-color: var(--crt-green);
-  box-shadow: 0 0 4px var(--crt-green), 0 0 8px var(--crt-green);
+  background-color: var(--crt-accent);
+  box-shadow: 0 0 4px var(--crt-accent), 0 0 9px var(--crt-accent);
   animation: power-led-pulse 2s ease-in-out infinite;
 }
 
+.power-led-off {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #3a1111;
+  box-shadow: inset 0 0 2px #000;
+}
+
 @keyframes power-led-pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 4px var(--crt-green), 0 0 8px var(--crt-green); }
-  50%      { opacity: 0.6; box-shadow: 0 0 2px var(--crt-green); }
+  0%, 100% { opacity: 1; box-shadow: 0 0 4px var(--crt-accent), 0 0 9px var(--crt-accent); }
+  50%      { opacity: 0.6; box-shadow: 0 0 2px var(--crt-accent); }
 }
 
 /* ── XTerm.js Container Overrides ─────────────────────────────────── */
@@ -138,7 +301,7 @@ html, body {
   display: inline-block;
   width: 8px;
   height: 16px;
-  background-color: var(--crt-green);
+  background-color: var(--crt-accent);
   animation: cursor-blink 1s step-end infinite;
 }
 
@@ -157,9 +320,8 @@ html, body {
   content: '';
   position: absolute;
   inset: 0;
-  opacity: 0.03;
+  opacity: var(--crt-noise-opacity);
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
   pointer-events: none;
   z-index: 9;
 }
-
