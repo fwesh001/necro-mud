@@ -1,22 +1,34 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import {
+  computeHpSegments,
+  type HudMonster,
+  type ScanDetails,
+} from '../lib/telemetry';
+import type { CrtIntensity, PhosphorMode } from './CrtBezel';
+import { PhosphorOscilloscope } from './PhosphorOscilloscope';
 
-export interface HudMonster {
-  name: string;
-  tier: string;
-}
+export type { HudMonster };
 
 export interface HudTelemetry {
   playerId: string;
   playerName: string;
+  title: string;
   hp: number;
   maxHp: number;
   xp: number;
+  bugsSquashed: number;
+  inventory: string[];
   roomName: string;
   roomPath: string | null;
   monsters: HudMonster[];
   mountedRepo: string;
+  repoStatus: 'ready' | 'loading';
+  roomCount: number | null;
+  monsterCount: number | null;
+  lastScan: ScanDetails | null;
+  topHacker: { name: string; xp: number; title: string } | null;
   lastEventLabel: string;
 }
 
@@ -27,6 +39,12 @@ interface TacticalHudProps {
   connectionState: ConnectionState;
   latencyMs: number | null;
   telemetry: HudTelemetry;
+  phosphorMode: PhosphorMode;
+  crtIntensity: CrtIntensity;
+  muted: boolean;
+  selectedMonster: string | null;
+  onSelectMonster: (name: string | null) => void;
+  onOpenPatchModal: () => void;
   onSendCommand: (command: string) => void;
   onMountRepo: (repoSlug: string) => void;
 }
@@ -35,12 +53,12 @@ const MACRO_KEYS: Array<{
   label: string;
   command: string;
   needsMonsterTarget?: boolean;
-  tone?: 'danger' | 'accent' | 'neutral';
+  tone?: 'danger' | 'accent' | 'magic' | 'neutral';
 }> = [
   { label: 'LOOK', command: 'LOOK', tone: 'accent' },
   { label: 'MAP', command: 'MAP', tone: 'neutral' },
   { label: 'STATUS', command: 'STATUS', tone: 'neutral' },
-  { label: 'HELP', command: 'HELP', tone: 'neutral' },
+  { label: 'TOP', command: 'TOP', tone: 'magic' },
   { label: 'MOVE N', command: 'MOVE north', tone: 'neutral' },
   { label: 'MOVE S', command: 'MOVE south', tone: 'neutral' },
   { label: 'MOVE E', command: 'MOVE east', tone: 'neutral' },
@@ -48,31 +66,43 @@ const MACRO_KEYS: Array<{
   { label: 'SCAN', command: 'SCAN', needsMonsterTarget: true, tone: 'accent' },
   { label: 'ATTACK', command: 'ATTACK', needsMonsterTarget: true, tone: 'danger' },
   { label: 'PATCH', command: 'PATCH', needsMonsterTarget: true, tone: 'accent' },
+  { label: 'CAST', command: 'CAST hotfix', tone: 'magic' },
 ];
 
 /**
  * TacticalHud — Collapsible brushed-metal hardware telemetry deck.
  *
- * Displays live player vitals, room info, monster targeting, mechanical
- * macro keycaps, and a repository loader bar without altering the 80x24
- * ANSI XTerm.js viewport.
+ * Displays live player vitals, XP/title, commit scroll inventory,
+ * WebAudio phosphor oscilloscope, monster targeting, mechanical macro
+ * keycaps (including CAST & TOP), BIOS Patch modal button, and repo loader.
  */
 export function TacticalHud({
   open,
   connectionState,
   latencyMs,
   telemetry,
+  phosphorMode,
+  crtIntensity,
+  muted,
+  selectedMonster,
+  onSelectMonster,
+  onOpenPatchModal,
   onSendCommand,
   onMountRepo,
 }: TacticalHudProps) {
-  const [selectedMonster, setSelectedMonster] = useState<string | null>(null);
   const [repoInput, setRepoInput] = useState(telemetry.mountedRepo);
+
+  useEffect(() => {
+    setRepoInput(telemetry.mountedRepo);
+  }, [telemetry.mountedRepo]);
 
   if (!open) return null;
 
-  const hpPct = Math.max(0, Math.min(100, Math.round((telemetry.hp / Math.max(1, telemetry.maxHp)) * 100)));
-  const hpSegments = 12;
-  const filledSegments = Math.round((hpPct / 100) * hpSegments);
+  const { pct: hpPct, filled: filledSegments, total: hpSegments } = computeHpSegments(
+    telemetry.hp,
+    telemetry.maxHp,
+    12,
+  );
 
   const activeTarget =
     telemetry.monsters.find(m => m.name === selectedMonster)?.name
@@ -103,7 +133,7 @@ export function TacticalHud({
 
   return (
     <aside
-      className="w-full lg:w-80 shrink-0 rounded-2xl p-4 font-mono text-xs flex flex-col gap-4 select-none"
+      className="w-full lg:w-84 shrink-0 rounded-2xl p-4 font-mono text-xs flex flex-col gap-3 select-none"
       style={{
         background: 'linear-gradient(160deg, #252525 0%, #161616 55%, #0d0d0d 100%)',
         border: '2px solid #353535',
@@ -111,7 +141,7 @@ export function TacticalHud({
       }}
     >
       {/* Header plate */}
-      <div className="flex items-center justify-between border-b border-[#2e2e2e] pb-2.5">
+      <div className="flex items-center justify-between border-b border-[#2e2e2e] pb-2">
         <span className="uppercase tracking-[0.2em] font-bold text-[11px] text-neutral-400">
           Telemetry Deck
         </span>
@@ -131,13 +161,28 @@ export function TacticalHud({
         </div>
       </div>
 
+      {/* Live Phosphor Audio Oscilloscope */}
+      <PhosphorOscilloscope
+        phosphorMode={phosphorMode}
+        crtIntensity={crtIntensity}
+        muted={muted}
+      />
+
       {/* Live Vitals LEDs */}
-      <section className="rounded-lg p-3 bg-[#090b09] border border-[#2a2a2a] flex flex-col gap-2.5">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] uppercase text-neutral-500">Adventurer</span>
-          <span className="text-[11px] font-bold truncate max-w-[170px]" style={{ color: 'var(--crt-accent)' }}>
-            {telemetry.playerName}
-          </span>
+      <section className="rounded-lg p-3 bg-[#090b09] border border-[#2a2a2a] flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-[11px] font-bold truncate" style={{ color: 'var(--crt-accent)' }}>
+              {telemetry.playerName}
+            </div>
+            <div className="text-[10px] text-neutral-500 truncate">
+              {telemetry.title}
+            </div>
+          </div>
+          <div className="text-right shrink-0">
+            <div className="text-[10px] text-amber-300 font-bold">{telemetry.xp} XP</div>
+            <div className="text-[9px] text-neutral-500">{telemetry.bugsSquashed} bugs</div>
+          </div>
         </div>
 
         {/* Segmented LED HP Bar */}
@@ -156,7 +201,7 @@ export function TacticalHud({
               return (
                 <div
                   key={idx}
-                  className="h-2.5 rounded-[2px]"
+                  className="h-2 rounded-[2px]"
                   style={{
                     backgroundColor: lit ? segColor : '#1a1d1a',
                     boxShadow: lit ? `0 0 5px ${segColor}` : 'none',
@@ -180,6 +225,39 @@ export function TacticalHud({
           )}
         </div>
 
+        {/* Commit Scrolls / Inventory */}
+        <div className="pt-1 border-t border-[#1e221e] flex flex-col gap-1">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase text-neutral-500">Commit Scrolls</span>
+            <button
+              type="button"
+              onClick={onOpenPatchModal}
+              className="text-[9px] uppercase px-1.5 py-0.5 rounded border cursor-pointer"
+              style={{
+                borderColor: 'rgba(217, 70, 239, 0.45)',
+                color: '#e879f9',
+                background: '#160d19',
+              }}
+            >
+              BIOS / Spells
+            </button>
+          </div>
+          {telemetry.inventory.length === 0 ? (
+            <span className="text-[10px] text-neutral-600 italic">No scrolls in inventory</span>
+          ) : (
+            <div className="flex flex-wrap gap-1">
+              {telemetry.inventory.map((item, i) => (
+                <span
+                  key={`${item}-${i}`}
+                  className="text-[9px] px-1.5 py-0.5 rounded bg-fuchsia-950/60 text-fuchsia-200 border border-fuchsia-800/60"
+                >
+                  ★ {item}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Active Monsters */}
         <div className="pt-1 border-t border-[#1e221e] flex flex-col gap-1">
           <div className="flex items-center justify-between">
@@ -191,14 +269,14 @@ export function TacticalHud({
           {telemetry.monsters.length === 0 ? (
             <span className="text-[11px] text-neutral-600 italic">Sector clear</span>
           ) : (
-            <div className="flex flex-col gap-1 max-h-24 overflow-y-auto">
+            <div className="flex flex-col gap-1 max-h-20 overflow-y-auto">
               {telemetry.monsters.map(m => {
                 const isSelected = activeTarget === m.name;
                 return (
                   <button
                     key={m.name}
                     type="button"
-                    onClick={() => setSelectedMonster(m.name)}
+                    onClick={() => onSelectMonster(m.name)}
                     className="flex items-center justify-between px-2 py-1 rounded text-left text-[11px] cursor-pointer transition-colors"
                     style={{
                       background: isSelected ? 'rgba(255, 85, 85, 0.14)' : '#121412',
@@ -219,29 +297,33 @@ export function TacticalHud({
       </section>
 
       {/* Mechanical Macro Keycaps */}
-      <section className="flex flex-col gap-2">
+      <section className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between">
           <span className="text-[10px] uppercase tracking-wider text-neutral-500">
             Macro Keycaps
           </span>
           {activeTarget && (
-            <span className="text-[9px] text-red-400 truncate max-w-[150px]">
+            <span className="text-[9px] text-red-400 truncate max-w-[155px]">
               TGT: {activeTarget}
             </span>
           )}
         </div>
 
-        <div className="grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-4 gap-1.5">
           {MACRO_KEYS.map(macro => {
             const borderColor =
               macro.tone === 'danger'
                 ? 'rgba(255, 85, 85, 0.45)'
+                : macro.tone === 'magic'
+                ? 'rgba(217, 70, 239, 0.45)'
                 : macro.tone === 'accent'
                 ? 'var(--crt-accent-dim)'
                 : '#3a3a3a';
             const textColor =
               macro.tone === 'danger'
                 ? '#FF7777'
+                : macro.tone === 'magic'
+                ? '#f0abfc'
                 : macro.tone === 'accent'
                 ? 'var(--crt-accent)'
                 : '#d4d4d4';
@@ -252,7 +334,7 @@ export function TacticalHud({
                 type="button"
                 disabled={connectionState !== 'connected'}
                 onClick={() => handleMacroClick(macro)}
-                className="px-2 py-1.5 rounded text-[10px] font-bold uppercase tracking-wide cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-0.5"
+                className="px-1.5 py-1.5 rounded text-[9px] font-bold uppercase tracking-wide cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-0.5"
                 style={{
                   background: 'linear-gradient(180deg, #2b2b2b 0%, #1a1a1a 100%)',
                   border: `1px solid ${borderColor}`,
@@ -269,10 +351,17 @@ export function TacticalHud({
 
       {/* Repository Loader Bar */}
       <section className="pt-2 border-t border-[#2e2e2e] flex flex-col gap-1.5">
-        <div className="flex items-center justify-between text-[10px]">
+        <div className="flex items-center justify-between text-[10px] gap-2">
           <span className="uppercase tracking-wider text-neutral-500">Mounted Repo</span>
-          <span className="text-neutral-400 truncate max-w-[140px]">
-            {telemetry.mountedRepo}
+          <span
+            className="truncate max-w-[165px]"
+            style={{ color: telemetry.repoStatus === 'loading' ? '#FFB000' : '#a3a3a3' }}
+          >
+            {telemetry.repoStatus === 'loading'
+              ? 'LOADING TREE...'
+              : telemetry.roomCount !== null
+              ? `${telemetry.mountedRepo} (${telemetry.roomCount}R/${telemetry.monsterCount ?? 0}M)`
+              : telemetry.mountedRepo}
           </span>
         </div>
         <form onSubmit={handleRepoSubmit} className="flex gap-1.5">
@@ -302,4 +391,3 @@ export function TacticalHud({
     </aside>
   );
 }
-
