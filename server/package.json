@@ -10,7 +10,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@necro-mud/shared": "*",
+    "@necro-mud/shared": "workspace:*",
     "express": "^5.1.0",
     "ws": "^8.18.0"
   },

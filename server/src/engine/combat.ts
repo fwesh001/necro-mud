@@ -46,6 +46,7 @@ export function executeCombatRound(
   if (targetSlain) {
     monster.alive = false;
     player.xp += monster.xpReward;
+    player.bugsSquashed = (player.bugsSquashed ?? 0) + 1;
   }
 
   // ── Monster counterattacks (if alive) ────────────────────────────
@@ -114,6 +115,7 @@ export function executePatch(player: Player, monster: Monster): PatchResult {
     monster.alive = false;
     xpEarned = monster.xpReward + 5;
     player.xp += xpEarned;
+    player.bugsSquashed = (player.bugsSquashed ?? 0) + 1;
 
     const drop =
       monster.origin === 'bug'
@@ -198,6 +200,7 @@ export function executeSpell(
       if (targetSlain) {
         target.alive = false;
         player.xp += target.xpReward;
+        player.bugsSquashed = (player.bugsSquashed ?? 0) + 1;
       }
       return {
         success: true,

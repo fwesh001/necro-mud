@@ -16,6 +16,7 @@ import {
 } from '../engine/combat.js';
 import { generateDungeonFromRepo } from '../engine/github-parser.js';
 import { generateAiNarration } from '../engine/ai-dm.js';
+import { getLeaderboard } from '../engine/persistence.js';
 import {
   renderRoomDescription,
   renderCombatResult,
@@ -25,6 +26,7 @@ import {
   renderScanResult,
   renderPatchResult,
   renderSpellResult,
+  renderLeaderboard,
 } from '../ansi/renderer.js';
 import { sendEvent, broadcastToRoom, broadcastGlobal } from '../ws/handler.js';
 
@@ -99,6 +101,10 @@ export function parseAndExecute(
       handleRepo(ws, wss, dungeon, packet.playerId, packet.args);
       break;
 
+    case 'TOP':
+      handleLeaderboard(ws, packet.playerId);
+      break;
+
     case 'SAY':
       handleSay(wss, dungeon, packet.playerId, packet.args);
       break;
@@ -170,6 +176,20 @@ function handleStatus(ws: WebSocket, dungeon: DungeonState, playerId: string): v
     type: 'event',
     event: 'status-view',
     payload: { ansi: renderStatusView(player) },
+    playerId,
+    timestamp: Date.now(),
+  });
+}
+
+function handleLeaderboard(ws: WebSocket, playerId: string): void {
+  const records = getLeaderboard();
+  sendEvent(ws, {
+    type: 'event',
+    event: 'leaderboard-view',
+    payload: {
+      ansi: renderLeaderboard(records),
+      records,
+    },
     playerId,
     timestamp: Date.now(),
   });

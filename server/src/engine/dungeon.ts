@@ -6,6 +6,7 @@
  */
 
 import type { Room, Monster, Player } from '@necro-mud/shared';
+import { loadPersistedPlayers, savePlayer, computePlayerTitle } from './persistence.js';
 
 export class DungeonState {
   private rooms: Map<string, Room> = new Map();
@@ -104,7 +105,22 @@ export class DungeonState {
   // ── Player Operations ────────────────────────────────────────────
 
   addPlayer(player: Player): Player {
+    const saved = loadPersistedPlayers().get(player.name.toLowerCase());
+    if (saved) {
+      player.xp = saved.xp;
+      player.hp = Math.max(player.hp, saved.hp);
+      player.maxHp = Math.max(player.maxHp, saved.maxHp);
+      player.inventory = Array.from(new Set([...player.inventory, ...saved.inventory]));
+      player.bugsSquashed = saved.bugsSquashed;
+      player.title = saved.title;
+    } else {
+      player.bugsSquashed = player.bugsSquashed ?? 0;
+      player.title = computePlayerTitle(player.xp);
+    }
+
     this.players.set(player.id, player);
+    savePlayer(player);
+
     // Add player to their room
     const room = this.rooms.get(player.currentRoomId);
     if (room && !room.playerIds.includes(player.id)) {
@@ -116,6 +132,7 @@ export class DungeonState {
   removePlayer(id: string): void {
     const player = this.players.get(id);
     if (player) {
+      savePlayer(player);
       // Remove from current room
       const room = this.rooms.get(player.currentRoomId);
       if (room) {

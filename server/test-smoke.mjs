@@ -5,11 +5,13 @@
  *   1. HTTP /api/health
  *   2. WebSocket connection
  *   3. Welcome packet & initial room description
- *   4. Commands: HELP, LOOK, MAP, STATUS, MOVE, SCAN, PATCH, CAST, ATTACK, REPO
- *   5. Line length constraint (all visible ANSI lines <= 80 chars)
+ *   4. Commands: HELP, LOOK, MAP, STATUS, MOVE, SCAN, PATCH, CAST, ATTACK, REPO, TOP
+ *   5. Raw Telnet Bridge on port 2323
+ *   6. Line length constraint (all visible ANSI lines <= 80 chars)
  */
 
 import http from 'node:http';
+import net from 'node:net';
 import { WebSocket } from 'ws';
 
 function stripAnsi(str) {
@@ -83,7 +85,6 @@ async function testWs() {
       if (packet.event === 'welcome') {
         playerId = packet.payload.playerId;
         console.log(`  [PASS] Received welcome event for ${playerId}`);
-        // Test HELP
         sendCommand('HELP');
       } else if (packet.event === 'help-text') {
         console.log('  [PASS] Received help-text');
@@ -114,6 +115,9 @@ async function testWs() {
         sendCommand('REPO', ['fwesh001/necro-mud']);
       } else if (packet.event === 'repo-loaded') {
         console.log('  [PASS] Received repo-loaded event! Reality shifted successfully!');
+        sendCommand('TOP');
+      } else if (packet.event === 'leaderboard-view') {
+        console.log('  [PASS] Received leaderboard-view (Hall of Fame)!');
         clearTimeout(timeout);
         ws.close();
         resolve();
@@ -127,12 +131,43 @@ async function testWs() {
   });
 }
 
+async function testTelnet() {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({ port: 2323, host: '127.0.0.1' }, () => {
+      console.log('  [PASS] Raw Telnet connection opened on port 2323');
+    });
+
+    let received = '';
+    const timeout = setTimeout(() => {
+      socket.end();
+      reject(new Error('Telnet test timed out'));
+    }, 6000);
+
+    socket.on('data', (chunk) => {
+      received += chunk.toString('utf-8');
+      if (received.includes('NECRO-MUD') && received.includes('Repository Gates')) {
+        checkAnsiWidth(received, 'telnet-stream');
+        console.log('  [PASS] Telnet received authentic ANSI welcome & room banner!');
+        clearTimeout(timeout);
+        socket.end();
+        resolve();
+      }
+    });
+
+    socket.on('error', (err) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
+  });
+}
+
 async function run() {
-  console.log('Starting Necro-MUD Backend Smoke Tests...');
+  console.log('Starting Necro-MUD Complete Backend Smoke Tests...');
   try {
     await testHealth();
     await testWs();
-    console.log('\n>>> ALL BACKEND SMOKE TESTS PASSED SUCCESSFULLY! <<<\n');
+    await testTelnet();
+    console.log('\n>>> ALL BACKEND SMOKE TESTS PASSED (HTTP, WS, TELNET)! <<<\n');
     process.exit(0);
   } catch (err) {
     console.error('\nXXX SMOKE TEST FAILED: XXX', err);
@@ -141,4 +176,3 @@ async function run() {
 }
 
 run();
-

@@ -7,6 +7,7 @@
 
 import type { Room, Monster, Player, CombatResultPayload } from '@necro-mud/shared';
 import { CP437, FG, RESET, BOLD, DIM, AnsiColor } from '@necro-mud/shared';
+import { computePlayerTitle } from '../engine/persistence.js';
 
 const WIDTH = 78; // Total box width including borders (fits cleanly in 80-col grid)
 
@@ -227,13 +228,15 @@ export function renderCombatResult(result: CombatResultPayload): string {
 export function renderStatusView(player: Player): string {
   const lines: string[] = [];
 
-  lines.push(`${FG[AnsiColor.BrightCyan]}Name:${RESET}  ${player.name}`);
-  lines.push(`${FG[AnsiColor.BrightGreen]}HP:${RESET}    ${renderHpBar(player.hp, player.maxHp, 20)} ${player.hp}/${player.maxHp}`);
-  lines.push(`${FG[AnsiColor.BrightRed]}ATK:${RESET}   ${player.attack}`);
-  lines.push(`${FG[AnsiColor.BrightBlue]}DEF:${RESET}   ${player.defense}`);
-  lines.push(`${FG[AnsiColor.BrightYellow]}XP:${RESET}    ${player.xp}`);
-  lines.push(`${FG[AnsiColor.BrightMagenta]}Room:${RESET}  ${player.currentRoomId}`);
-  lines.push(`${FG[AnsiColor.White]}Items:${RESET} ${player.inventory.length > 0 ? player.inventory.join(', ') : '(empty)'}`);
+  const title = player.title || computePlayerTitle(player.xp);
+  lines.push(`${FG[AnsiColor.BrightCyan]}Name:${RESET}   ${player.name}  ${DIM}(${title})${RESET}`);
+  lines.push(`${FG[AnsiColor.BrightGreen]}HP:${RESET}     ${renderHpBar(player.hp, player.maxHp, 20)} ${player.hp}/${player.maxHp}`);
+  lines.push(`${FG[AnsiColor.BrightRed]}ATK:${RESET}    ${player.attack}`);
+  lines.push(`${FG[AnsiColor.BrightBlue]}DEF:${RESET}    ${player.defense}`);
+  lines.push(`${FG[AnsiColor.BrightYellow]}XP:${RESET}     ${player.xp}`);
+  lines.push(`${FG[AnsiColor.Yellow]}Bugs:${RESET}   ${player.bugsSquashed ?? 0} squashed`);
+  lines.push(`${FG[AnsiColor.BrightMagenta]}Room:${RESET}   ${player.currentRoomId}`);
+  lines.push(`${FG[AnsiColor.White]}Items:${RESET}  ${player.inventory.length > 0 ? player.inventory.join(', ') : '(empty)'}`);
 
   return '\r\n' + renderBox('ADVENTURER STATUS', lines.join('\r\n')) + '\r\n';
 }
@@ -300,6 +303,7 @@ export function renderHelpText(): string {
     ['PATCH <monster>',   'Apply tactical bug-fixing patch to defect'],
     ['CAST <spell>',      'Cast commit scroll (HOTFIX/REFACTOR/ROLLBACK)'],
     ['REPO <owner/repo>', 'Hot-swap dungeon with a live GitHub repository'],
+    ['TOP',               'View Hall of Fame XP leaderboard & rankings'],
     ['SAY <message>',     'Speak to other adventurers in the room'],
   ];
 
@@ -308,6 +312,48 @@ export function renderHelpText(): string {
   );
 
   return '\r\n' + renderBox('COMMANDS', lines.join('\r\n')) + '\r\n';
+}
+
+// ── Leaderboard View ──────────────────────────────────────────────
+
+export function renderLeaderboard(
+  records: Array<{ name: string; xp: number; title: string; bugsSquashed?: number }>,
+): string {
+  const lines: string[] = [];
+
+  lines.push(
+    ` ${FG[AnsiColor.BrightYellow]}#  ${'HACKER'.padEnd(16)} ${'RANK / TITLE'.padEnd(24)} ${'XP'.padStart(6)} ${'BUGS'.padStart(6)}${RESET}`
+  );
+  lines.push(
+    ` ${FG[AnsiColor.BrightBlack]}${CP437.SINGLE_HORIZONTAL.repeat(60)}${RESET}`
+  );
+
+  if (records.length === 0) {
+    lines.push(`  ${FG[AnsiColor.White]}No adventurers recorded in the hall of fame yet.${RESET}`);
+  } else {
+    records.slice(0, 10).forEach((rec, idx) => {
+      const rank = `${idx + 1}.`.padEnd(3);
+      const name = rec.name.slice(0, 15).padEnd(16);
+      const title = rec.title.slice(0, 23).padEnd(24);
+      const xp = String(rec.xp).padStart(6);
+      const bugs = String(rec.bugsSquashed ?? 0).padStart(6);
+
+      const color =
+        idx === 0
+          ? AnsiColor.BrightYellow
+          : idx === 1
+          ? AnsiColor.BrightWhite
+          : idx === 2
+          ? AnsiColor.Yellow
+          : AnsiColor.White;
+
+      lines.push(
+        ` ${FG[color]}${rank}${name}${title}${xp}${bugs}${RESET}`
+      );
+    });
+  }
+
+  return '\r\n' + renderBox('HALL OF FAME (TOP HACKERS)', lines.join('\r\n')) + '\r\n';
 }
 
 // ── Scan Result ───────────────────────────────────────────────────

@@ -25,5 +25,9 @@ export interface Player {
   visitedRooms: string[];
   /** Unix timestamp (ms) when the player connected */
   connectedAt: number;
+  /** Number of bugs/monsters vanquished */
+  bugsSquashed?: number;
+  /** Developer title derived from XP rank */
+  title?: string;
 }
 
