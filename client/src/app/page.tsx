@@ -13,10 +13,17 @@ import { BootSequence } from './components/BootSequence';
 import {
   TacticalHud,
   type HudTelemetry,
-  type HudMonster,
   type ConnectionState,
 } from './components/TacticalHud';
+import { PatchModal } from './components/PatchModal';
+import { getClientWsUrl } from './lib/endpoints';
 import { getSoundEngine } from './lib/sound-engine';
+import {
+  parsePatchTargetName,
+  parseRoomDescription,
+  parseScanResult,
+  parseStatusView,
+} from './lib/telemetry';
 
 // XTerm.js MUST be loaded client-side only — SSR will throw `window is not defined`
 const Terminal = dynamic(
@@ -34,52 +41,8 @@ const Terminal = dynamic(
 const PHOSPHOR_CYCLE: PhosphorMode[] = ['green', 'amber', 'blood', 'vga'];
 const INTENSITY_CYCLE: CrtIntensity[] = ['high', 'low', 'off'];
 
-function stripAnsi(str: string): string {
-  return str.replace(/\x1b\[[0-9;]*m/g, '');
-}
-
-/** Parse room name, filepath, and living monsters from ANSI room-description output */
-function parseRoomDescription(ansi: string): {
-  roomName?: string;
-  roomPath: string | null;
-  monsters: HudMonster[];
-} {
-  const clean = stripAnsi(ansi);
-  const lines = clean.split(/\r?\n/);
-
-  let roomName: string | undefined;
-  let roomPath: string | null = null;
-  const monsters: HudMonster[] = [];
-
-  for (const line of lines) {
-    const trimmed = line.replace(/[╔╗╚╝═║]/g, '').trim();
-    if (!trimmed) continue;
-
-    if (!roomName) {
-      roomName = trimmed;
-      continue;
-    }
-
-    const pathMatch = trimmed.match(/^\[([^\]]+)\]$/);
-    if (pathMatch && !['LOCKED', 'MINION', 'ELITE', 'BOSS'].includes(pathMatch[1] ?? '')) {
-      roomPath = pathMatch[1] ?? null;
-      continue;
-    }
-
-    // Monster lines start with CP437 sword †: "† Phantom Bug #42 [MINION] [██████████]"
-    const monsterMatch = trimmed.match(/^†\s+(.+?)\s+\[(MINION|ELITE|BOSS)\]/i);
-    if (monsterMatch) {
-      monsters.push({
-        name: monsterMatch[1]!.trim(),
-        tier: monsterMatch[2]!.toLowerCase(),
-      });
-    }
-  }
-
-  return { roomName, roomPath, monsters };
-}
-
 export default function HomePage() {
+  const wsUrl = getClientWsUrl();
   const [bootComplete, setBootComplete] = useState(false);
   const [phosphorMode, setPhosphorMode] = useState<PhosphorMode>('green');
   const [crtIntensity, setCrtIntensity] = useState<CrtIntensity>('high');
@@ -89,19 +52,29 @@ export default function HomePage() {
   const [muted, setMuted] = useState(false);
   const [ambientOn, setAmbientOn] = useState(false);
   const [hudOpen, setHudOpen] = useState(true);
+  const [patchModalOpen, setPatchModalOpen] = useState(false);
+  const [selectedMonster, setSelectedMonster] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
 
   const [telemetry, setTelemetry] = useState<HudTelemetry>({
     playerId: 'pending',
     playerName: 'Adventurer',
+    title: 'Intern Drifter',
     hp: 100,
     maxHp: 100,
     xp: 0,
+    bugsSquashed: 0,
+    inventory: [],
     roomName: 'The Repository Gates',
     roomPath: '/',
     monsters: [],
     mountedRepo: 'fwesh001/necro-mud',
+    repoStatus: 'ready',
+    roomCount: null,
+    monsterCount: null,
+    lastScan: null,
+    topHacker: null,
     lastEventLabel: 'BOOT',
   });
 
@@ -210,10 +183,37 @@ export default function HomePage() {
       }
 
       if (packet.event === 'combat-result') {
-        if (typeof payload.attackerHp === 'number') next.hp = payload.attackerHp;
-        if (typeof payload.attackerMaxHp === 'number') next.maxHp = payload.attackerMaxHp;
-        if (payload.targetSlain === true && typeof payload.targetName === 'string') {
-          next.monsters = prev.monsters.filter(m => m.name !== payload.targetName);
+        const patchResult = payload.patchResult as
+          | { solved?: boolean; xpEarned?: number; loot?: string[] }
+          | undefined;
+
+        if (patchResult) {
+          if (typeof patchResult.xpEarned === 'number' && patchResult.xpEarned > 0) {
+            next.xp = prev.xp + patchResult.xpEarned;
+          }
+          if (patchResult.solved) {
+            next.bugsSquashed = prev.bugsSquashed + 1;
+            const patchedName = typeof payload.ansi === 'string'
+              ? parsePatchTargetName(payload.ansi)
+              : null;
+            if (patchedName) {
+              next.monsters = prev.monsters.filter(m => m.name !== patchedName);
+            }
+          }
+          if (Array.isArray(patchResult.loot) && patchResult.loot.length > 0) {
+            const merged = new Set(prev.inventory);
+            for (const item of patchResult.loot) {
+              if (typeof item === 'string') merged.add(item);
+            }
+            next.inventory = Array.from(merged);
+          }
+        } else {
+          if (typeof payload.attackerHp === 'number') next.hp = payload.attackerHp;
+          if (typeof payload.attackerMaxHp === 'number') next.maxHp = payload.attackerMaxHp;
+          if (payload.targetSlain === true && typeof payload.targetName === 'string') {
+            next.monsters = prev.monsters.filter(m => m.name !== payload.targetName);
+            next.bugsSquashed = prev.bugsSquashed + 1;
+          }
         }
       }
 
@@ -221,17 +221,75 @@ export default function HomePage() {
         next.monsters = prev.monsters.filter(m => m.name !== payload.monsterName);
       }
 
+      if (packet.event === 'scan-result' && typeof payload.ansi === 'string') {
+        const scan = parseScanResult(payload.ansi);
+        if (scan) next.lastScan = scan;
+      }
+
+      if (packet.event === 'narration' && payload.spellResult && typeof payload.spellResult === 'object') {
+        const spell = payload.spellResult as {
+          success?: boolean;
+          spellName?: string;
+          hpHealed?: number;
+          targetSlain?: boolean;
+        };
+        if (spell.success) {
+          if (typeof spell.hpHealed === 'number' && spell.hpHealed > 0) {
+            next.hp = Math.min(prev.maxHp, prev.hp + spell.hpHealed);
+          }
+          if (typeof spell.spellName === 'string') {
+            const scrollSlug = `scroll-${spell.spellName.toLowerCase()}`;
+            const idx = prev.inventory.indexOf(scrollSlug);
+            if (idx !== -1) {
+              next.inventory = prev.inventory.filter((_, i) => i !== idx);
+            }
+          }
+        }
+      }
+
       if (packet.event === 'status-view' && typeof payload.ansi === 'string') {
-        const clean = stripAnsi(payload.ansi);
-        const hpMatch = clean.match(/HP:\s+\S+\s+(\d+)\/(\d+)/);
-        if (hpMatch) {
-          next.hp = Number(hpMatch[1]);
-          next.maxHp = Number(hpMatch[2]);
+        const parsed = parseStatusView(payload.ansi);
+        if (parsed.title) next.title = parsed.title;
+        if (parsed.hp !== undefined) next.hp = parsed.hp;
+        if (parsed.maxHp !== undefined) next.maxHp = parsed.maxHp;
+        if (parsed.xp !== undefined) next.xp = parsed.xp;
+        if (parsed.bugsSquashed !== undefined) next.bugsSquashed = parsed.bugsSquashed;
+        if (parsed.inventory !== undefined) next.inventory = parsed.inventory;
+      }
+
+      if (packet.event === 'repo-loaded') {
+        const owner = typeof payload.owner === 'string' ? payload.owner : '';
+        const repo = typeof payload.repo === 'string' ? payload.repo : '';
+        if (owner && repo) {
+          next.mountedRepo = `${owner}/${repo}`;
         }
-        const xpMatch = clean.match(/XP:\s+(\d+)/);
-        if (xpMatch) {
-          next.xp = Number(xpMatch[1]);
+        next.repoStatus = 'ready';
+        next.roomCount = typeof payload.roomCount === 'number' ? payload.roomCount : prev.roomCount;
+        next.monsterCount = typeof payload.monsterCount === 'number' ? payload.monsterCount : prev.monsterCount;
+        next.lastScan = null;
+      }
+
+      if (packet.event === 'leaderboard-view' && Array.isArray(payload.records)) {
+        const records = payload.records as Array<{
+          name?: string;
+          xp?: number;
+          title?: string;
+          bugsSquashed?: number;
+        }>;
+        const first = records[0];
+        if (first?.name && typeof first.xp === 'number' && first.title) {
+          next.topHacker = { name: first.name, xp: first.xp, title: first.title };
         }
+        const mine = records.find(r => r.name === prev.playerName);
+        if (mine) {
+          if (typeof mine.xp === 'number') next.xp = mine.xp;
+          if (typeof mine.title === 'string') next.title = mine.title;
+          if (typeof mine.bugsSquashed === 'number') next.bugsSquashed = mine.bugsSquashed;
+        }
+      }
+
+      if (packet.event === 'error') {
+        next.repoStatus = 'ready';
       }
 
       return next;
@@ -248,13 +306,22 @@ export default function HomePage() {
   }, []);
 
   const handleMountRepo = useCallback((repoSlug: string) => {
-    setTelemetry(prev => ({ ...prev, mountedRepo: repoSlug }));
+    setTelemetry(prev => ({
+      ...prev,
+      mountedRepo: repoSlug,
+      repoStatus: 'loading',
+    }));
     commandSenderRef.current?.(`REPO ${repoSlug}`);
   }, []);
 
+  const activeTarget =
+    telemetry.monsters.find(m => m.name === selectedMonster)?.name
+    ?? telemetry.monsters[0]?.name
+    ?? null;
+
   return (
     <main className="flex items-center justify-center min-h-screen bg-[#030303] p-3 sm:p-5">
-      <div className="w-full max-w-[1400px] flex flex-col lg:flex-row items-stretch justify-center gap-4">
+      <div className="w-full max-w-[1440px] flex flex-col lg:flex-row items-stretch justify-center gap-4">
         <CrtBezel
           phosphorMode={phosphorMode}
           onCyclePhosphor={handleCyclePhosphor}
@@ -273,10 +340,13 @@ export default function HomePage() {
           onToggleHud={() => setHudOpen(prev => !prev)}
         >
           {!bootComplete ? (
-            <BootSequence onComplete={() => setBootComplete(true)} />
+            <BootSequence
+              wsUrl={wsUrl}
+              onComplete={() => setBootComplete(true)}
+            />
           ) : (
             <Terminal
-              wsUrl="ws://localhost:4000"
+              wsUrl={wsUrl}
               phosphorMode={phosphorMode}
               onServerEvent={handleServerEvent}
               onConnectionChange={handleConnectionChange}
@@ -292,10 +362,32 @@ export default function HomePage() {
           connectionState={connectionState}
           latencyMs={latencyMs}
           telemetry={telemetry}
+          phosphorMode={phosphorMode}
+          crtIntensity={crtIntensity}
+          muted={muted}
+          selectedMonster={selectedMonster}
+          onSelectMonster={setSelectedMonster}
+          onOpenPatchModal={() => {
+            getSoundEngine().unlock();
+            getSoundEngine().playKeystroke();
+            setPatchModalOpen(true);
+          }}
           onSendCommand={handleSendCommand}
           onMountRepo={handleMountRepo}
         />
       </div>
+
+      <PatchModal
+        open={patchModalOpen}
+        onClose={() => setPatchModalOpen(false)}
+        activeTarget={activeTarget}
+        monsters={telemetry.monsters}
+        scanDetails={telemetry.lastScan}
+        inventory={telemetry.inventory}
+        connected={connectionState === 'connected'}
+        onSelectTarget={(name) => setSelectedMonster(name)}
+        onSendCommand={handleSendCommand}
+      />
     </main>
   );
 }
