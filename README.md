@@ -135,7 +135,7 @@ necro-mud/
 | Developer   | Role                                        |
 |:------------|:--------------------------------------------|
 | **Zabdiel** | Frontend, CRT aesthetics, Xterm.js, Audio   |
-| **Samkiel (Eke)** | MUD Engine, WebSocket state, GitHub Parser |
+| **Samkiel** | MUD Engine, WebSocket state, GitHub Parser  |
 
 ## 📜 License
 
