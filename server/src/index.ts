@@ -5,7 +5,7 @@
  * Handles multiplayer MUD sessions over WebSockets.
  */
 
-import express from 'express';
+import express, { type Express } from 'express';
 import http from 'node:http';
 import { WebSocketServer } from 'ws';
 import { handleConnection } from './ws/handler.js';
@@ -17,7 +17,7 @@ import { startTelnetBridge } from './telnet/bridge.js';
 const PORT = parseInt(process.env.PORT ?? '4000', 10);
 
 // ── Express App ──────────────────────────────────────────────────────
-const app = express();
+const app: Express = express();
 app.use(express.json());
 
 app.get('/api/health', (_req, res) => {
