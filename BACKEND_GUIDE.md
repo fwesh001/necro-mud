@@ -1,6 +1,6 @@
 # ☠ Necro-MUD — Backend Developer Guide
 
-Welcome to the Backend Track, **Samkiel (Eke)**! This guide sets up your independent workflow for `@necro-mud/server` and `@necro-mud/shared` so you and **Zabdiel** (`@necro-mud/client`) can build in parallel with **zero merge conflicts**.
+Welcome to the Backend Track, **Samkiel**! This guide sets up your independent workflow for `@necro-mud/server` and `@necro-mud/shared` so you and **Zabdiel** (`@necro-mud/client`) can build in parallel with **zero merge conflicts**.
 
 ---
 
@@ -42,7 +42,7 @@ curl http://localhost:4000/api/health
 
 | Track | Owner | Owned Paths | Branch |
 |:------|:------|:------------|:-------|
-| **Backend** | **Samkiel (Eke)** | `server/`, `shared/`, backend items in `.kiro/specs/necro-mud-core/tasks.md` | `feat/server-github-ai` |
+| **Backend** | **Samkiel** | `server/`, `shared/`, backend items in `.kiro/specs/necro-mud-core/tasks.md` | `feat/server-github-ai` |
 | **Frontend** | **Zabdiel** | `client/`, frontend items in `.kiro/specs/necro-mud-core/tasks.md` | `feat/client-crt-costume` |
 
 ### Non-Negotiable Guardrails
@@ -86,7 +86,7 @@ curl http://localhost:4000/api/health
 Copy and paste the prompt below directly into your AI coding agent (**Antigravity**, **Kiro**, or **Cursor**) after checking out `feat/server-github-ai`:
 
 ```markdown
-You are acting as Backend Lead (Samkiel / Eke) on Necro-MUD on branch `feat/server-github-ai`.
+You are acting as Backend Lead (Samkiel) on Necro-MUD on branch `feat/server-github-ai`.
 First read `AGENTS.md`, `.kiro/steering/tech.md`, `.kiro/steering/structure.md`, `.kiro/specs/necro-mud-core/requirements.md`, and `.kiro/specs/necro-mud-core/design.md`.
 
 STRICT RULES:
