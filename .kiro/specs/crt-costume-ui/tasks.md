@@ -20,3 +20,4 @@ description: "CRT Costume UI & Wave 3 Frontend Integration Tasks"
 - [x] C3.2 Add `CAST` & `TOP` macro keycaps and Commit Scroll inventory badges in `TacticalHud.tsx`
 - [x] C3.3 Map `'repo-loaded'`, `'narration'` spell cues, `'combat-result'` hurt/patch/slain cues in `sound-engine.ts` per `FRONTEND_INTEGRATION.md`
 - [x] C3.4 Support `NEXT_PUBLIC_WS_URL` in `Terminal.tsx` & `client/src/app/lib/endpoints.ts`, add `client/.env.example`, and add `/api/health` cold-start wake-up ping to `BootSequence.tsx`
+
