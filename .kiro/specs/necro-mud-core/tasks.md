@@ -46,6 +46,8 @@ Frontend — owned primarily by **Zabdiel**.
 - [x] 2.12 Build procedural WebAudio `RetroSoundEngine` (`client/src/app/lib/sound-engine.ts`) with modem handshake, mechanical keystrokes, degauss thump, 8-bit event SFX, and 60Hz CRT hum
 - [x] 2.13 Upgrade `CrtBezel.tsx` & `globals.css` with 4 phosphor modes (`P1-GRN`, `P3-AMB`, `BLOOD`, `VGA-16`), 900ms degauss warp animation, cathode power collapse, and scanline/flicker intensity toggles
 - [x] 2.14 Build collapsible `TacticalHud.tsx` hardware deck (live vitals LEDs, monster target selector, macro keycaps, and repo loader bar)
+- [x] 2.15 Add `PhosphorOscilloscope.tsx` (`AnalyserNode` waveform), `PatchModal.tsx` (BIOS Patch & Spellbook), `fast-check` PBT suite (`test:pbt`), and `.kiro/specs/crt-costume-ui/`
+- [x] 2.16 Integrate Wave 3+ payloads (`repo-loaded`, `leaderboard-view`, `scan-result`, `patchResult`, `spellResult`), `NEXT_PUBLIC_WS_URL`, `client/.env.example`, and `/api/health` wake-up ping
 
 ## Wave 3 — MUD Engine, GitHub Repo Parser & AI Dungeon Master
 Backend — owned primarily by **Samkiel**.
