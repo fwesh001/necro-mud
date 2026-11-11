@@ -12,6 +12,7 @@ import {
 } from '@necro-mud/shared';
 import type { PhosphorMode } from './CrtBezel';
 import type { ConnectionState } from './TacticalHud';
+import { getClientWsUrl } from '../lib/endpoints';
 import { getSoundEngine } from '../lib/sound-engine';
 
 const PHOSPHOR_XTERM_THEMES: Record<PhosphorMode, ITheme> = {
@@ -59,7 +60,7 @@ const PHOSPHOR_XTERM_THEMES: Record<PhosphorMode, ITheme> = {
 };
 
 interface TerminalProps {
-  wsUrl: string;
+  wsUrl?: string;
   phosphorMode: PhosphorMode;
   onServerEvent?: (packet: ServerEventPacket) => void;
   onConnectionChange?: (state: ConnectionState, latencyMs?: number | null) => void;
@@ -69,8 +70,9 @@ interface TerminalProps {
 /**
  * Terminal — XTerm.js terminal component with WebSocket connection.
  *
- * Connects to the Necro-MUD server, displays ANSI output in an 80x24 grid,
- * triggers WebAudio keystroke/event SFX, and feeds telemetry to TacticalHud.
+ * Connects to NEXT_PUBLIC_WS_URL (default ws://localhost:4000), displays
+ * 80x24 ANSI output, triggers WebAudio keystroke/event SFX, and forwards
+ * Wave 3+ events to TacticalHud and PatchModal.
  */
 export function Terminal({
   wsUrl,
@@ -79,6 +81,7 @@ export function Terminal({
   onConnectionChange,
   onRegisterSender,
 }: TerminalProps) {
+  const effectiveWsUrl = wsUrl ?? getClientWsUrl();
   const containerRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<{ terminal: XTerm; fitAddon: FitAddon } | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -148,7 +151,7 @@ export function Terminal({
     }
   }, []);
 
-  // Register sender callback for TacticalHud macro keys & repo loader
+  // Register sender callback for TacticalHud & PatchModal
   useEffect(() => {
     onRegisterSenderRef.current?.((rawCmd: string) => {
       getSoundEngine().unlock();
@@ -183,14 +186,14 @@ export function Terminal({
     onConnectionChangeRef.current?.('connecting', null);
 
     try {
-      const ws = new WebSocket(wsUrl);
+      const ws = new WebSocket(effectiveWsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {
         reconnectAttemptRef.current = 0;
         promptShownRef.current = false;
         onConnectionChangeRef.current?.('connected', 0);
-        terminal.writeln('\r\n\x1b[1;32m✓ Connected to Necro-MUD server\x1b[0m\r\n');
+        terminal.writeln(`\r\n\x1b[1;32m✓ Connected to Necro-MUD (${effectiveWsUrl})\x1b[0m\r\n`);
       };
 
       ws.onmessage = (event) => {
@@ -210,7 +213,7 @@ export function Terminal({
             }
 
             onServerEventRef.current?.(packet);
-            getSoundEngine().playEventSfx(packet.event);
+            getSoundEngine().playEventSfx(packet.event, payload);
 
             // Clear active prompt line if async output arrives mid-typing
             if (promptShownRef.current) {
@@ -256,7 +259,7 @@ export function Terminal({
       terminal.writeln('\r\n\x1b[1;31m✗ Failed to connect\x1b[0m');
       scheduleReconnect(terminal, connect);
     }
-  }, [wsUrl, schedulePrompt, scheduleReconnect]);
+  }, [effectiveWsUrl, schedulePrompt, scheduleReconnect]);
 
   useEffect(() => {
     if (!containerRef.current || xtermRef.current) return;
@@ -337,7 +340,7 @@ export function Terminal({
       terminal.dispose();
       xtermRef.current = null;
     };
-  }, [connect, dispatchCommand]); // phosphorMode handled via dedicated theme effect
+  }, [connect, dispatchCommand]);
 
   return (
     <div
