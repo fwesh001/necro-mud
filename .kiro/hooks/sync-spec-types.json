@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Validate spec-type alignment on spec change",
+      "trigger": "PostFileSave",
+      "matcher": "\\.kiro/specs/.*\\.md$",
+      "action": {
+        "type": "agent",
+        "command": "The spec file was just updated. Review the changed spec and cross-reference it against the TypeScript types in /shared/src/types/. Report any drift where the spec defines fields, commands, or events that do not match the TypeScript interfaces, or vice versa."
+      }
+    }
+  ]
+}
+

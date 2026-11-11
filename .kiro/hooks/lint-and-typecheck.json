@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Type-check shared and server on save",
+      "trigger": "PostFileSave",
+      "matcher": "(shared|server)/src/.*\\.ts$",
+      "action": {
+        "type": "command",
+        "command": "npx tsc --noEmit --project shared/tsconfig.json && npx tsc --noEmit --project server/tsconfig.json"
+      }
+    }
+  ]
+}
+

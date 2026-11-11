@@ -1,0 +1,165 @@
+@import "tailwindcss";
+
+@theme {
+  --color-crt-green: #00FF41;
+  --color-crt-amber: #FFB000;
+  --color-crt-dark: #0a0a0a;
+  --color-crt-bezel: #1a1a1a;
+  --color-crt-bezel-light: #2a2a2a;
+  --shadow-crt-inner: inset 0 0 60px rgba(0, 255, 65, 0.05), inset 0 0 120px rgba(0, 0, 0, 0.3);
+  --shadow-crt-outer: 0 0 20px rgba(0, 255, 65, 0.1), 0 0 60px rgba(0, 0, 0, 0.5);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   NECRO-MUD — CRT Terminal Stylesheet
+   Authentic 1990s CRT monitor aesthetic with scanlines, phosphor
+   glow, screen curvature, and flicker effects.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Base ─────────────────────────────────────────────────────────── */
+
+:root {
+  --crt-green: #00FF41;
+  --crt-amber: #FFB000;
+  --crt-dark: #0a0a0a;
+  --crt-scanline-opacity: 0.12;
+  --crt-glow-radius: 8px;
+}
+
+html, body {
+  background-color: #000;
+  color: var(--crt-green);
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ── CRT Scanline Overlay ─────────────────────────────────────────── */
+
+.crt-scanlines {
+  position: relative;
+}
+
+.crt-scanlines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, var(--crt-scanline-opacity)) 0px,
+    rgba(0, 0, 0, var(--crt-scanline-opacity)) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* ── Phosphor Glow ────────────────────────────────────────────────── */
+
+.crt-glow {
+  text-shadow:
+    0 0 3px rgba(0, 255, 65, 0.5),
+    0 0 8px rgba(0, 255, 65, 0.3),
+    0 0 16px rgba(0, 255, 65, 0.15),
+    0 0 32px rgba(0, 255, 65, 0.05);
+}
+
+/* ── CRT Flicker ──────────────────────────────────────────────────── */
+
+.crt-flicker {
+  animation: crt-flicker 0.15s infinite;
+}
+
+@keyframes crt-flicker {
+  0%   { opacity: 0.97; }
+  2%   { opacity: 0.94; }
+  4%   { opacity: 0.98; }
+  8%   { opacity: 0.96; }
+  70%  { opacity: 0.975; }
+  100% { opacity: 0.97; }
+}
+
+/* ── CRT Screen Curvature ─────────────────────────────────────────── */
+
+.crt-curve {
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+/* ── Vignette (darkened edges like a real CRT) ────────────────────── */
+
+.crt-vignette::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 60%,
+    rgba(0, 0, 0, 0.4) 100%
+  );
+  pointer-events: none;
+  z-index: 11;
+}
+
+/* ── Power LED ────────────────────────────────────────────────────── */
+
+.power-led {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--crt-green);
+  box-shadow: 0 0 4px var(--crt-green), 0 0 8px var(--crt-green);
+  animation: power-led-pulse 2s ease-in-out infinite;
+}
+
+@keyframes power-led-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 4px var(--crt-green), 0 0 8px var(--crt-green); }
+  50%      { opacity: 0.6; box-shadow: 0 0 2px var(--crt-green); }
+}
+
+/* ── XTerm.js Container Overrides ─────────────────────────────────── */
+
+.xterm {
+  padding: 0;
+}
+
+.xterm-viewport {
+  background-color: transparent !important;
+}
+
+.xterm-screen {
+  background-color: transparent !important;
+}
+
+/* ── Boot Sequence Typewriter ─────────────────────────────────────── */
+
+.boot-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 16px;
+  background-color: var(--crt-green);
+  animation: cursor-blink 1s step-end infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0; }
+}
+
+/* ── Noise / Static Grain ─────────────────────────────────────────── */
+
+.crt-noise {
+  position: relative;
+}
+
+.crt-noise::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9;
+}
+
