@@ -44,7 +44,7 @@ export function getWelcomeBanner(): string {
     frameLine(''),
     frameLine(`  ${D}Kiroween 2026 Hackathon${RESET}`),
     frameLine(`  ${D}Resurrection + Costume Contest${RESET}`),
-    frameLine(`  ${M}By Zabdiel & Eke${RESET}`),
+    frameLine(`  ${M}By Zabdiel & Samkiel${RESET}`),
     `${C}${CP437.DOUBLE_BOTTOM_LEFT}${CP437.DOUBLE_HORIZONTAL.repeat(INNER_WIDTH)}${CP437.DOUBLE_BOTTOM_RIGHT}${RESET}`,
     '',
   ].join('\r\n');
