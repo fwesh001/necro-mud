@@ -263,3 +263,4 @@ The collapsible hardware deck can display live state by listening to:
 - **16-Color VGA Palette:** Every ANSI escape sequence from the server strictly adheres to ANSI 0–15 colors.
 - **CP437 Safe:** Borders and icons use pure CP437 characters (`╔═╗`, `║`, `☠`, `★`, `♥`, `♦`).
 - **80-Column Limit:** All rendered lines are wrapped and padded to fit inside 80 terminal columns without overflow.
+

@@ -7,9 +7,13 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Player } from '@necro-mud/shared';
 
-const DATA_DIR = path.resolve(process.cwd(), 'server', 'data');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const SERVER_ROOT = path.resolve(__dirname, '..', '..');
+const DATA_DIR = path.join(SERVER_ROOT, 'data');
 const PLAYERS_FILE = path.join(DATA_DIR, 'players.json');
 
 export interface PersistedPlayerState {
@@ -117,3 +121,4 @@ export function getLeaderboard(): PersistedPlayerState[] {
   const players = Array.from(loadPersistedPlayers().values());
   return players.sort((a, b) => b.xp - a.xp || b.bugsSquashed - a.bugsSquashed);
 }
+
