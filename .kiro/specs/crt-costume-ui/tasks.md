@@ -21,3 +21,10 @@ description: "CRT Costume UI & Wave 3 Frontend Integration Tasks"
 - [x] C3.3 Map `'repo-loaded'`, `'narration'` spell cues, `'combat-result'` hurt/patch/slain cues in `sound-engine.ts` per `FRONTEND_INTEGRATION.md`
 - [x] C3.4 Support `NEXT_PUBLIC_WS_URL` in `Terminal.tsx` & `client/src/app/lib/endpoints.ts`, add `client/.env.example`, and add `/api/health` cold-start wake-up ping to `BootSequence.tsx`
 
+
+### Wave 4 — Live GitHub Boot, 80-Col Auto-Scale & Onboarding UX (Ideas A–D)
+- [x] **C4.1**: Upgrade backend boot (`server/src/index.ts`, `ws/handler.ts`, `dungeon.ts`, `github-parser.ts`) to hydrate live `fwesh001/necro-mud` rooms asynchronously on startup with real-file defect monsters and `ai-dm.ts` Groq (`gsk_`) / xAI Grok (`xai-`) auto-detection.
+- [x] **C4.2**: Eliminate native white `.xterm-viewport` scrollbars and scrollbar arrow buttons in `globals.css` (`.crt-scroll`, `3px` phosphor thumb) and replace `FitAddon` col expansion with `ResizeObserver` `fontSize` auto-scaling locked to `80` cols in `Terminal.tsx`.
+- [x] **C4.3**: Add unlocked exit parsing (`parseRoomDescription`) + 4-step `computeQuestObjective` in `telemetry.ts` with 1,000-run `fast-check` PBT assertions in `client/src/test/pbt/telemetry-ansi.test.ts`.
+- [x] **C4.4**: Render Idea A (`Active Objective` banner) and Idea B (exit dots, combat/scroll dimming, local edge-case interception, and dismissible inline **Tactical Advisory** banner) plus Idea D (`PRESET_REPOS` chips) in `TacticalHud.tsx` and `page.tsx`.
+- [x] **C4.5**: Build 3-tab `FieldGuideModal.tsx` (Idea C) and wire `[? GUIDE]` bezel/HUD buttons across `CrtBezel.tsx`, `TacticalHud.tsx`, and `page.tsx`.

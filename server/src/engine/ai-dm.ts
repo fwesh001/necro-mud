@@ -16,7 +16,7 @@ import { AnsiColor, CP437, FG, RESET, BOLD } from '@necro-mud/shared';
 
 export interface AiDmConfig {
   apiKey?: string;
-  provider?: 'gemini' | 'openai' | 'generic';
+  provider?: 'gemini' | 'openai' | 'groq' | 'xai' | 'grok' | 'generic';
   model?: string;
   timeoutMs?: number;
 }
@@ -134,35 +134,94 @@ export function getDeterministicGothicNarration(result: CombatResultPayload): st
   return lines.join('\r\n');
 }
 
+interface ResolvedAiEndpoint {
+  apiKey: string;
+  kind: 'gemini' | 'openai-compatible';
+  endpoint: string;
+  model: string;
+}
+
 /**
- * Attempt to query an LLM provider (Gemini or OpenAI) with strict timeout.
+ * Resolve configured AI DM credentials and target chat completions endpoint.
+ * Supports Gemini (`AIza...`), Groq (`gsk_...`), xAI Grok (`xai-...`), and OpenAI.
+ */
+function resolveAiEndpoint(config?: AiDmConfig): ResolvedAiEndpoint | null {
+  const apiKey = (
+    config?.apiKey ??
+    process.env.LLM_API_KEY ??
+    process.env.GROQ_API_KEY ??
+    process.env.XAI_API_KEY ??
+    process.env.GROK_API_KEY ??
+    process.env.kiro_llm_api ??
+    process.env.OPENAI_API_KEY ??
+    process.env.GEMINI_API_KEY
+  )?.trim();
+
+  if (!apiKey) return null;
+
+  if (
+    config?.provider === 'gemini' ||
+    (!config?.provider && apiKey.startsWith('AIza')) ||
+    Boolean(process.env.GEMINI_API_KEY && !process.env.LLM_API_KEY && !process.env.GROQ_API_KEY && !process.env.XAI_API_KEY && !process.env.GROK_API_KEY && !process.env.kiro_llm_api)
+  ) {
+    return {
+      apiKey,
+      kind: 'gemini',
+      endpoint: `https://generativelanguage.googleapis.com/v1beta/models/${config?.model ?? 'gemini-1.5-flash'}:generateContent?key=${apiKey}`,
+      model: config?.model ?? 'gemini-1.5-flash',
+    };
+  }
+
+  if (config?.provider === 'groq' || apiKey.startsWith('gsk_')) {
+    return {
+      apiKey,
+      kind: 'openai-compatible',
+      endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+      model: config?.model ?? process.env.LLM_MODEL ?? 'llama-3.3-70b-versatile',
+    };
+  }
+
+  if (config?.provider === 'xai' || config?.provider === 'grok' || apiKey.startsWith('xai-')) {
+    return {
+      apiKey,
+      kind: 'openai-compatible',
+      endpoint: 'https://api.x.ai/v1/chat/completions',
+      model: config?.model ?? process.env.LLM_MODEL ?? 'grok-2-latest',
+    };
+  }
+
+  return {
+    apiKey,
+    kind: 'openai-compatible',
+    endpoint: 'https://api.openai.com/v1/chat/completions',
+    model: config?.model ?? process.env.LLM_MODEL ?? 'gpt-4o-mini',
+  };
+}
+
+/** Check whether any supported LLM API key is configured in the environment */
+export function hasAiDmKey(): boolean {
+  return resolveAiEndpoint() !== null;
+}
+
+/**
+ * Attempt to query an LLM provider (Groq / xAI Grok / Gemini / OpenAI) with strict timeout.
  * Returns null if unconfigured, times out, or encounters any network error.
  */
 export async function generateAiNarration(
   result: CombatResultPayload,
   config?: AiDmConfig,
 ): Promise<string | null> {
-  const apiKey =
-    config?.apiKey ??
-    process.env.GEMINI_API_KEY ??
-    process.env.OPENAI_API_KEY ??
-    process.env.LLM_API_KEY;
+  const resolved = resolveAiEndpoint(config);
+  if (!resolved) return null;
 
-  if (!apiKey) return null;
-
-  const timeoutMs = config?.timeoutMs ?? 2000;
-  const isGemini =
-    config?.provider === 'gemini' ||
-    Boolean(process.env.GEMINI_API_KEY) ||
-    apiKey.startsWith('AIza');
-
+  const timeoutMs = config?.timeoutMs ?? 3500;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   const prompt = [
     'You are a 1980s Gothic BBS MUD Dungeon Master narrating combat in a haunted GitHub repository.',
     'Write 1 to 2 short sentences describing this combat round with dark computing/hacker atmosphere.',
-    'Max 60 words total. Do NOT use markdown. Do NOT use emojis. Fit within 75 chars per line.',
+    'Max 55 words total. Do NOT use markdown. Do NOT use emojis. Fit within 75 chars per line.',
     `Attacker HP: ${result.attackerHp}/${result.attackerMaxHp}`,
     `Monster: ${result.targetName} (${result.targetHp}/${result.targetMaxHp} HP remaining)`,
     `Damage dealt to monster: ${result.damageDealt}`,
@@ -171,9 +230,8 @@ export async function generateAiNarration(
   ].join('\n');
 
   try {
-    if (isGemini) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-      const res = await fetch(url, {
+    if (resolved.kind === 'gemini') {
+      const res = await fetch(resolved.endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -186,36 +244,39 @@ export async function generateAiNarration(
       if (!res.ok) return null;
       const data = (await res.json()) as any;
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      return typeof text === 'string' ? text.trim() : null;
-    } else {
-      // OpenAI-compatible endpoint
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: config?.model ?? 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content:
-                'You are a 1980s Gothic BBS MUD Dungeon Master. 1-2 punchy sentences, dark computing flavor, max 50 words.',
-            },
-            { role: 'user', content: prompt },
-          ],
-          max_tokens: 80,
-          temperature: 0.7,
-        }),
-        signal: controller.signal,
-      });
-
-      if (!res.ok) return null;
-      const data = (await res.json()) as any;
-      const text = data?.choices?.[0]?.message?.content;
-      return typeof text === 'string' ? text.trim() : null;
+      return typeof text === 'string' && text.trim()
+        ? wrapLines(text.trim(), 60).join('\r\n  ')
+        : null;
     }
+
+    const res = await fetch(resolved.endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${resolved.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: resolved.model,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a 1980s Gothic BBS MUD Dungeon Master. 1-2 punchy sentences, dark computing flavor, max 50 words. Plain text only.',
+          },
+          { role: 'user', content: prompt },
+        ],
+        max_tokens: 90,
+        temperature: 0.7,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) return null;
+    const data = (await res.json()) as any;
+    const text = data?.choices?.[0]?.message?.content;
+    return typeof text === 'string' && text.trim()
+      ? wrapLines(text.trim(), 60).join('\r\n  ')
+      : null;
   } catch {
     // Timeout or network error — fail safe
     return null;

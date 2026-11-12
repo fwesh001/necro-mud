@@ -281,18 +281,63 @@ html, body {
   50%      { opacity: 0.6; box-shadow: 0 0 2px var(--crt-accent); }
 }
 
-/* ── XTerm.js Container Overrides ─────────────────────────────────── */
+/* ── XTerm.js & CRT Scrollbar Overrides ───────────────────────────── */
 
 .xterm {
   padding: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.xterm-viewport,
+.crt-scroll {
+  background-color: transparent !important;
+  scrollbar-width: thin;
+  scrollbar-color: var(--crt-accent-dim) transparent;
 }
 
 .xterm-viewport {
-  background-color: transparent !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+}
+
+.xterm-viewport::-webkit-scrollbar,
+.crt-scroll::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+  background: transparent;
+}
+
+.xterm-viewport::-webkit-scrollbar-track,
+.crt-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb,
+.crt-scroll::-webkit-scrollbar-thumb {
+  background: var(--crt-accent-dim);
+  border-radius: 9999px;
+  box-shadow: 0 0 6px var(--crt-glow-soft);
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb:hover,
+.crt-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--crt-accent);
+}
+
+.xterm-viewport::-webkit-scrollbar-button,
+.xterm-viewport::-webkit-scrollbar-corner,
+.crt-scroll::-webkit-scrollbar-button,
+.crt-scroll::-webkit-scrollbar-corner {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
 }
 
 .xterm-screen {
   background-color: transparent !important;
+  margin: 0 auto;
 }
 
 /* ── Boot Sequence Typewriter ─────────────────────────────────────── */

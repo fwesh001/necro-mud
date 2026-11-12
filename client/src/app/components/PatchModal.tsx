@@ -199,7 +199,7 @@ export function PatchModal({
                     {effectiveScan.description}
                   </p>
                   {effectiveScan.snippet && (
-                    <pre className="text-[9px] text-neutral-400 bg-black/70 p-1.5 rounded border border-[#1f261f] overflow-x-auto max-h-20 whitespace-pre-wrap">
+                    <pre className="crt-scroll text-[9px] text-neutral-400 bg-black/70 p-1.5 rounded border border-[#1f261f] overflow-x-auto overflow-y-auto max-h-20 whitespace-pre-wrap">
                       {effectiveScan.snippet}
                     </pre>
                   )}

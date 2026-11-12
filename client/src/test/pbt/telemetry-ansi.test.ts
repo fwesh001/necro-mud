@@ -4,6 +4,7 @@ import fc from 'fast-check';
 import {
   clampHpRatio,
   computeHpSegments,
+  computeQuestObjective,
   parseRoomDescription,
   parseScanResult,
   parseStatusView,
@@ -108,6 +109,7 @@ test('PBT: HUD ANSI parsers never throw on arbitrary fuzzed payloads', () => {
     fc.property(ansiMixedTextArb, (raw) => {
       const room = parseRoomDescription(raw);
       assert.ok(Array.isArray(room.monsters));
+      assert.ok(Array.isArray(room.exits));
 
       const status = parseStatusView(raw);
       if (status.hp !== undefined) assert.ok(Number.isFinite(status.hp));
@@ -116,6 +118,55 @@ test('PBT: HUD ANSI parsers never throw on arbitrary fuzzed payloads', () => {
       const scan = parseScanResult(raw);
       assert.ok(scan === null || typeof scan.target === 'string');
     }),
+    { numRuns: 1000 },
+  );
+});
+
+test('PBT: parseRoomDescription extracts unlocked exits accurately and computeQuestObjective always yields valid Step 1-4', () => {
+  const dirArb = fc.constantFrom('north', 'south', 'east', 'west', 'up', 'down') as fc.Arbitrary<
+    'north' | 'south' | 'east' | 'west' | 'up' | 'down'
+  >;
+
+  fc.assert(
+    fc.property(
+      fc.uniqueArray(dirArb, { minLength: 1, maxLength: 4 }),
+      fc.boolean(),
+      fc.boolean(),
+      fc.boolean(),
+      (dirs, hasMonster, scanned, hasScroll) => {
+        const exitsBlock = dirs.map(d => `  ► \x1b[97m${d}\x1b[0m`).join('\r\n');
+        const monstersBlock = hasMonster ? '\r\n\x1b[91m☠ Monsters:\x1b[0m\r\n  † Bug #1 [MINION]' : '';
+        const roomAnsi = `\x1b[1;32mTest Chamber\x1b[0m\r\nDesc\r\n[src/]\r\n\r\nExits:\r\n${exitsBlock}${monstersBlock}\r\n`;
+
+        const parsed = parseRoomDescription(roomAnsi);
+        assert.deepEqual(parsed.exits, dirs);
+
+        const obj = computeQuestObjective({
+          monsters: parsed.monsters,
+          lastScan: scanned && hasMonster ? {
+            target: 'Bug #1',
+            origin: 'bug',
+            tier: 'minion',
+            hp: '30/30',
+            atk: '7',
+            def: '3',
+            labels: [],
+            source: '',
+            description: '',
+            snippet: null,
+          } : null,
+          inventory: hasScroll ? ['scroll-hotfix'] : [],
+          exits: parsed.exits,
+        });
+
+        assert.ok([1, 2, 3, 4].includes(obj.step));
+        assert.ok(obj.text.startsWith(`STEP ${obj.step}/4:`));
+        if (hasScroll) assert.equal(obj.step, 4);
+        else if (!hasMonster) assert.equal(obj.step, 1);
+        else if (scanned) assert.equal(obj.step, 3);
+        else assert.equal(obj.step, 2);
+      },
+    ),
     { numRuns: 1000 },
   );
 });

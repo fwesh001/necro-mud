@@ -235,7 +235,7 @@ export function generateMockDungeon(): { rooms: Room[]; monsters: Monster[] } {
   return { rooms, monsters };
 }
 
-/** Helper to make authenticated/unauthenticated GitHub API calls */
+/** Helper to make authenticated/unauthenticated GitHub API calls with 1 transient retry */
 async function fetchGithubJson(url: string, token?: string): Promise<any> {
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github.v3+json',
@@ -246,11 +246,25 @@ async function fetchGithubJson(url: string, token?: string): Promise<any> {
     headers['Authorization'] = `Bearer ${authToken}`;
   }
 
-  const res = await fetch(url, { headers });
-  if (!res.ok) {
-    throw new Error(`GitHub API HTTP ${res.status}: ${res.statusText} (${url})`);
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(url, {
+        headers,
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) {
+        const httpErr: any = new Error(`GitHub API HTTP ${res.status}: ${res.statusText} (${url})`);
+        httpErr.nonRetryable = true;
+        throw httpErr;
+      }
+      return res.json();
+    } catch (err: any) {
+      lastErr = err;
+      if (err?.nonRetryable || attempt === 1) throw err;
+    }
   }
-  return res.json();
+  throw lastErr;
 }
 
 /**
@@ -274,47 +288,36 @@ export async function generateDungeonFromRepo(
     );
     const defaultBranch = config.branch || repoInfo.default_branch || 'main';
 
-    // 2. Fetch Git Tree (recursive)
-    let treeItems: Array<{ path: string; type: string; size?: number }> = [];
-    try {
-      const treeData = await fetchGithubJson(
+    // 2-4. Fetch Git Tree, Open Issues, and Workflow Runs in parallel
+    const [treeRes, issuesRes, runsRes] = await Promise.allSettled([
+      fetchGithubJson(
         `https://api.github.com/repos/${owner}/${repo}/git/trees/${defaultBranch}?recursive=1`,
         token,
-      );
-      if (Array.isArray(treeData.tree)) {
-        treeItems = treeData.tree;
-      }
-    } catch {
-      treeItems = [];
-    }
-
-    // 3. Fetch Open Issues (exclude PRs)
-    let rawIssues: any[] = [];
-    try {
-      const issuesData = await fetchGithubJson(
+      ),
+      fetchGithubJson(
         `https://api.github.com/repos/${owner}/${repo}/issues?state=open&per_page=15`,
         token,
-      );
-      if (Array.isArray(issuesData)) {
-        rawIssues = issuesData.filter((i: any) => !i.pull_request);
-      }
-    } catch {
-      rawIssues = [];
-    }
-
-    // 4. Fetch Recent Workflow Runs
-    let workflowRuns: any[] = [];
-    try {
-      const runsData = await fetchGithubJson(
+      ),
+      fetchGithubJson(
         `https://api.github.com/repos/${owner}/${repo}/actions/runs?per_page=5`,
         token,
-      );
-      if (Array.isArray(runsData.workflow_runs)) {
-        workflowRuns = runsData.workflow_runs;
-      }
-    } catch {
-      workflowRuns = [];
-    }
+      ),
+    ]);
+
+    const treeItems: Array<{ path: string; type: string; size?: number }> =
+      treeRes.status === 'fulfilled' && Array.isArray(treeRes.value?.tree)
+        ? treeRes.value.tree
+        : [];
+
+    const rawIssues: any[] =
+      issuesRes.status === 'fulfilled' && Array.isArray(issuesRes.value)
+        ? issuesRes.value.filter((i: any) => !i.pull_request)
+        : [];
+
+    const workflowRuns: any[] =
+      runsRes.status === 'fulfilled' && Array.isArray(runsRes.value?.workflow_runs)
+        ? runsRes.value.workflow_runs
+        : [];
 
     // ── Build Rooms ──────────────────────────────────────────────────
     const directoryPaths = new Set<string>();
@@ -475,6 +478,52 @@ export async function generateDungeonFromRepo(
         targetRoom.monsterIds.push(monster.id);
       }
     }
+
+    // 2.5 Complexity Monsters -> Populate any empty intermediate room from real repo source files
+    const codeBlobs = treeItems
+      .filter(
+        (item): item is { path: string; type: string; size?: number } =>
+          item.type === 'blob' &&
+          /\.(ts|tsx|js|jsx|py|go|rs|java|rb|cs|cpp|c)$/i.test(item.path) &&
+          !/lock\.yaml$|\.min\./i.test(item.path),
+      )
+      .sort((a, b) => (b.size ?? 0) - (a.size ?? 0));
+
+    const emptyRooms = nonEntranceRooms.filter(
+      r => r.id !== bossRoom.id && r.monsterIds.length === 0,
+    );
+
+    emptyRooms.forEach((room, idx) => {
+      const blob = codeBlobs[idx];
+      if (!blob) return;
+      const baseName = blob.path.split('/').pop() ?? blob.path;
+      const sizeKb = Math.max(1, Math.round((blob.size ?? 1200) / 1024));
+      const isElite = sizeKb >= 10;
+      const hp = isElite ? 50 : 30;
+      const shortTitle = `Defect: ${baseName}`.slice(0, 32);
+
+      const monster: Monster = {
+        id: `monster-file-${idx}-${baseName.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase()}`,
+        name: shortTitle,
+        origin: 'bug',
+        tier: isElite ? 'elite' : 'minion',
+        hp,
+        maxHp: hp,
+        attack: isElite ? 11 : 7,
+        defense: isElite ? 5 : 3,
+        description: `Static defect hotspot in ${blob.path} (${sizeKb} KB) pulses with volatile AST entropy.`,
+        snippet: `File: ${blob.path} | Size: ${blob.size ?? 0} bytes (~${sizeKb} KB) | Defect hotspot #${idx + 1}`,
+        labels: ['defect', 'live-tree', isElite ? 'refactor-needed' : 'module'],
+        sourceRef: `https://github.com/${owner}/${repo}/blob/${defaultBranch}/${blob.path}`,
+        roomId: room.id,
+        alive: true,
+        xpReward: isElite ? 35 : 15,
+        loot: isElite ? ['scroll-refactor'] : ['scroll-hotfix'],
+      };
+
+      monsters.push(monster);
+      room.monsterIds.push(monster.id);
+    });
 
     // 3. Fallback Boss if no issues were loaded
     if (bossRoom.monsterIds.length === 0) {

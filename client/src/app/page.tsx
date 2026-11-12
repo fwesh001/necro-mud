@@ -16,6 +16,7 @@ import {
   type ConnectionState,
 } from './components/TacticalHud';
 import { PatchModal } from './components/PatchModal';
+import { FieldGuideModal } from './components/FieldGuideModal';
 import { getClientWsUrl } from './lib/endpoints';
 import { getSoundEngine } from './lib/sound-engine';
 import {
@@ -53,6 +54,7 @@ export default function HomePage() {
   const [ambientOn, setAmbientOn] = useState(false);
   const [hudOpen, setHudOpen] = useState(true);
   const [patchModalOpen, setPatchModalOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
   const [selectedMonster, setSelectedMonster] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
@@ -69,6 +71,7 @@ export default function HomePage() {
     roomName: 'The Repository Gates',
     roomPath: '/',
     monsters: [],
+    exits: ['north'],
     mountedRepo: 'fwesh001/necro-mud',
     repoStatus: 'ready',
     roomCount: null,
@@ -173,13 +176,23 @@ export default function HomePage() {
       if (packet.event === 'welcome') {
         if (typeof payload.playerId === 'string') next.playerId = payload.playerId;
         if (typeof payload.playerName === 'string') next.playerName = payload.playerName;
+        if (typeof payload.mountedRepo === 'string') {
+          next.mountedRepo = payload.mountedRepo;
+          next.repoStatus = 'ready';
+        }
+        if (typeof payload.roomCount === 'number') next.roomCount = payload.roomCount;
+        if (typeof payload.monsterCount === 'number') next.monsterCount = payload.monsterCount;
       }
 
       if (packet.event === 'room-description' && typeof payload.ansi === 'string') {
         const parsed = parseRoomDescription(payload.ansi);
+        if (parsed.roomName && parsed.roomName !== prev.roomName) {
+          next.lastScan = null;
+        }
         if (parsed.roomName) next.roomName = parsed.roomName;
         next.roomPath = parsed.roomPath;
         next.monsters = parsed.monsters;
+        next.exits = parsed.exits;
       }
 
       if (packet.event === 'combat-result') {
@@ -314,6 +327,12 @@ export default function HomePage() {
     commandSenderRef.current?.(`REPO ${repoSlug}`);
   }, []);
 
+  const handleOpenGuide = useCallback(() => {
+    getSoundEngine().unlock();
+    getSoundEngine().playKeystroke();
+    setGuideOpen(true);
+  }, []);
+
   const activeTarget =
     telemetry.monsters.find(m => m.name === selectedMonster)?.name
     ?? telemetry.monsters[0]?.name
@@ -338,6 +357,7 @@ export default function HomePage() {
           onDegauss={handleDegauss}
           hudOpen={hudOpen}
           onToggleHud={() => setHudOpen(prev => !prev)}
+          onOpenGuide={handleOpenGuide}
         >
           {!bootComplete ? (
             <BootSequence
@@ -372,6 +392,7 @@ export default function HomePage() {
             getSoundEngine().playKeystroke();
             setPatchModalOpen(true);
           }}
+          onOpenGuide={handleOpenGuide}
           onSendCommand={handleSendCommand}
           onMountRepo={handleMountRepo}
         />
@@ -388,6 +409,8 @@ export default function HomePage() {
         onSelectTarget={(name) => setSelectedMonster(name)}
         onSendCommand={handleSendCommand}
       />
+
+      <FieldGuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />
     </main>
   );
 }

@@ -15,7 +15,7 @@ import {
   executeSpell,
 } from '../engine/combat.js';
 import { generateDungeonFromRepo } from '../engine/github-parser.js';
-import { generateAiNarration } from '../engine/ai-dm.js';
+import { generateAiNarration, hasAiDmKey } from '../engine/ai-dm.js';
 import { getLeaderboard } from '../engine/persistence.js';
 import {
   renderRoomDescription,
@@ -244,11 +244,7 @@ function handleAttack(
   });
 
   // Optional background AI DM narration
-  if (
-    process.env.GEMINI_API_KEY ||
-    process.env.OPENAI_API_KEY ||
-    process.env.LLM_API_KEY
-  ) {
+  if (hasAiDmKey()) {
     generateAiNarration(result).then((aiText) => {
       if (aiText) {
         broadcastToRoom(
@@ -640,7 +636,8 @@ async function handleRepo(
     token: process.env.GITHUB_TOKEN,
   });
 
-  dungeon.loadDungeon(rooms, monsters);
+  const isLiveRepo = rooms[0]?.name.includes(`${owner}/${repo}`) ?? false;
+  dungeon.loadDungeon(rooms, monsters, `${owner}/${repo}`, isLiveRepo, true);
 
   broadcastGlobal(wss, {
     type: 'event',

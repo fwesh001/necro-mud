@@ -36,6 +36,7 @@ interface CrtBezelProps {
   onDegauss: () => void;
   hudOpen: boolean;
   onToggleHud: () => void;
+  onOpenGuide?: () => void;
 }
 
 /**
@@ -62,6 +63,7 @@ export function CrtBezel({
   onDegauss,
   hudOpen,
   onToggleHud,
+  onOpenGuide,
 }: CrtBezelProps) {
   const powerClass =
     powerPhase === 'collapsing'
@@ -215,6 +217,14 @@ export function CrtBezel({
               active={hudOpen}
               title="Show or collapse Tactical Hardware HUD"
             />
+            {onOpenGuide && (
+              <BezelButton
+                label="[? GUIDE]"
+                onClick={onOpenGuide}
+                active
+                title="Open Necromancer's Field Guide & Edge-Case Reference"
+              />
+            )}
           </div>
         </div>
       </div>

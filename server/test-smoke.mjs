@@ -60,6 +60,8 @@ async function testWs() {
       reject(new Error(`Smoke test timed out after receiving ${events.length} events`));
     }, 15000);
 
+    let room2Monster = 'monster-bug-42';
+
     function sendCommand(cmd, args = []) {
       ws.send(JSON.stringify({
         type: 'command',
@@ -100,16 +102,19 @@ async function testWs() {
         sendCommand('MOVE', ['north']);
       } else if (packet.event === 'room-description' && events.filter(e => e.event === 'room-description').length === 3) {
         console.log('  [PASS] Moved north successfully');
-        sendCommand('SCAN', ['monster-bug-42']);
+        const cleanRoom = stripAnsi(packet.payload.ansi ?? '');
+        const match = cleanRoom.match(/†\s+(.+?)\s+\[(?:MINION|ELITE|BOSS)\]/i);
+        room2Monster = match ? match[1].trim() : 'monster-bug-42';
+        sendCommand('SCAN', [room2Monster]);
       } else if (packet.event === 'scan-result') {
-        console.log('  [PASS] Received scan-result for monster-bug-42');
-        sendCommand('PATCH', ['monster-bug-42']);
+        console.log(`  [PASS] Received scan-result for ${room2Monster}`);
+        sendCommand('PATCH', [room2Monster]);
       } else if (packet.event === 'combat-result' && packet.payload.patchResult) {
         console.log('  [PASS] Received PATCH result');
         sendCommand('CAST', ['hotfix']);
       } else if (packet.event === 'narration' && packet.payload.spellResult) {
         console.log('  [PASS] Received CAST hotfix result');
-        sendCommand('ATTACK', ['monster-bug-42']);
+        sendCommand('ATTACK', [room2Monster]);
       } else if (packet.event === 'combat-result' && !packet.payload.patchResult) {
         console.log('  [PASS] Received ATTACK combat-result with gothic narration');
         sendCommand('REPO', ['fwesh001/necro-mud']);

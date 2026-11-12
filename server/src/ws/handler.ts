@@ -21,14 +21,37 @@ const playerSockets = new Map<string, WebSocket>();
 
 /**
  * Handle a new WebSocket connection.
- * Creates a Player, places them in the entrance, and starts the command loop.
+ * Waits briefly if initial live repo boot sync is still completing, creates a Player,
+ * places them in the entrance, and starts the command loop.
  */
-export function handleConnection(
+export async function handleConnection(
   ws: WebSocket,
   req: IncomingMessage,
   dungeon: DungeonState,
   wss: WebSocketServer,
-): void {
+  initialSyncPromise?: Promise<void>,
+): Promise<void> {
+  const queuedMessages: Buffer[] = [];
+  let ready = false;
+
+  const earlyBufferHandler = (data: Buffer) => {
+    if (!ready) {
+      queuedMessages.push(data);
+    }
+  };
+  ws.on('message', earlyBufferHandler);
+
+  if (initialSyncPromise) {
+    await Promise.race([
+      initialSyncPromise.catch(() => undefined),
+      new Promise<void>(resolve => setTimeout(resolve, 2500)),
+    ]);
+  }
+
+  if (ws.readyState !== ws.OPEN) {
+    return;
+  }
+
   const playerId = `player-${nextPlayerId++}`;
   const playerName = `Adventurer-${playerId.split('-')[1]!.padStart(4, '0')}`;
   const ip = req.socket.remoteAddress ?? 'unknown';
@@ -51,13 +74,17 @@ export function handleConnection(
     connectedAt: Date.now(),
   });
 
-  // Send welcome event
+  // Send welcome event with active dungeon metadata
   sendEvent(ws, {
     type: 'event',
     event: 'welcome',
     payload: {
       playerId: player.id,
       playerName: player.name,
+      mountedRepo: dungeon.getMountedRepo(),
+      roomCount: dungeon.getRoomCount(),
+      monsterCount: dungeon.getMonsterCount(),
+      isLive: dungeon.isLiveRepo(),
       banner: getWelcomeBanner(),
       message: `${FG[AnsiColor.BrightGreen]}Welcome, ${player.name}. Your repository awaits...${RESET}\r\nType ${FG[AnsiColor.BrightYellow]}HELP${RESET} for a list of commands.\r\n`,
     },
@@ -95,8 +122,7 @@ export function handleConnection(
     timestamp: Date.now(),
   }, playerId);
 
-  // ── Command Loop ─────────────────────────────────────────────────
-  ws.on('message', (data) => {
+  const handleIncomingMessage = (data: Buffer | string) => {
     try {
       const raw = data.toString();
       let packet: CommandPacket;
@@ -141,7 +167,16 @@ export function handleConnection(
       });
       console.error(`[WS] Error processing message from ${playerName}:`, err);
     }
-  });
+  };
+
+  // ── Command Loop ─────────────────────────────────────────────────
+  ws.off('message', earlyBufferHandler);
+  ready = true;
+  ws.on('message', handleIncomingMessage);
+
+  for (const buffered of queuedMessages) {
+    handleIncomingMessage(buffered);
+  }
 
   // ── Disconnect ───────────────────────────────────────────────────
   ws.on('close', () => {

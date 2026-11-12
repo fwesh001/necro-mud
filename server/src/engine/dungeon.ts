@@ -12,14 +12,31 @@ export class DungeonState {
   private rooms: Map<string, Room> = new Map();
   private monsters: Map<string, Monster> = new Map();
   private players: Map<string, Player> = new Map();
+  private mountedRepo: string = 'mock/necro-mud';
+  private liveRepo: boolean = false;
+  private manualOverride: boolean = false;
 
-  constructor(rooms: Room[], monsters: Monster[]) {
+  constructor(rooms: Room[], monsters: Monster[], mountedRepo: string = 'mock/necro-mud', liveRepo: boolean = false) {
+    this.mountedRepo = mountedRepo;
+    this.liveRepo = liveRepo;
     for (const room of rooms) {
       this.rooms.set(room.id, room);
     }
     for (const monster of monsters) {
       this.monsters.set(monster.id, monster);
     }
+  }
+
+  getMountedRepo(): string {
+    return this.mountedRepo;
+  }
+
+  isLiveRepo(): boolean {
+    return this.liveRepo;
+  }
+
+  hasManualRepoOverride(): boolean {
+    return this.manualOverride;
   }
 
   // ── Room Operations ──────────────────────────────────────────────
@@ -40,9 +57,18 @@ export class DungeonState {
    * Hot-swap the entire dungeon with new rooms and monsters.
    * Teleports all active players safely to 'entrance' and resets their visited state.
    */
-  loadDungeon(rooms: Room[], monsters: Monster[]): void {
+  loadDungeon(
+    rooms: Room[],
+    monsters: Monster[],
+    repoSlug?: string,
+    isLive?: boolean,
+    isManual: boolean = false,
+  ): void {
     this.rooms.clear();
     this.monsters.clear();
+    if (repoSlug) this.mountedRepo = repoSlug;
+    if (typeof isLive === 'boolean') this.liveRepo = isLive;
+    if (isManual) this.manualOverride = true;
 
     for (const room of rooms) {
       this.rooms.set(room.id, room);

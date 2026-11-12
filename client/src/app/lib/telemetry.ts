@@ -5,9 +5,17 @@
  * and the property-based fuzz testing suite.
  */
 
+import type { Direction } from '@necro-mud/shared';
+
 export interface HudMonster {
   name: string;
   tier: string;
+}
+
+export interface QuestObjective {
+  step: 1 | 2 | 3 | 4;
+  text: string;
+  focusKeys: string[];
 }
 
 export interface ScanDetails {
@@ -138,12 +146,13 @@ export function computeHpSegments(
 }
 
 /**
- * Parse room name, filepath, and living monsters from ANSI room-description output.
+ * Parse room name, filepath, valid exits, and living monsters from ANSI room-description output.
  */
 export function parseRoomDescription(ansi: string): {
   roomName?: string;
   roomPath: string | null;
   monsters: HudMonster[];
+  exits: Direction[];
 } {
   const clean = stripAnsi(ansi);
   const lines = clean.split(/\r?\n/);
@@ -151,14 +160,42 @@ export function parseRoomDescription(ansi: string): {
   let roomName: string | undefined;
   let roomPath: string | null = null;
   const monsters: HudMonster[] = [];
+  const exits: Direction[] = [];
+  let inExits = false;
 
   for (const line of lines) {
     const trimmed = line.replace(/[╔╗╚╝═║]/g, '').trim();
-    if (!trimmed) continue;
+    if (!trimmed) {
+      inExits = false;
+      continue;
+    }
 
     if (!roomName) {
       roomName = trimmed;
       continue;
+    }
+
+    if (/^Exits:$/i.test(trimmed)) {
+      inExits = true;
+      continue;
+    }
+
+    if (/^(?:☠|★)\s*(?:Monsters|Adventurers here):/i.test(trimmed)) {
+      inExits = false;
+      continue;
+    }
+
+    if (inExits) {
+      const exitMatch = trimmed.match(/^[►>]\s*(north|south|east|west|up|down)\b(.*)$/i);
+      if (exitMatch) {
+        const dir = exitMatch[1]!.toLowerCase() as Direction;
+        const suffix = exitMatch[2] ?? '';
+        if (!/\[LOCKED\]/i.test(suffix) && !exits.includes(dir)) {
+          exits.push(dir);
+        }
+        continue;
+      }
+      inExits = false;
     }
 
     const pathMatch = trimmed.match(/^\[([^\]]+)\]$/);
@@ -176,7 +213,65 @@ export function parseRoomDescription(ansi: string): {
     }
   }
 
-  return { roomName, roomPath, monsters };
+  return { roomName, roomPath, monsters, exits };
+}
+
+const DIRECTION_SHORT_LABEL: Record<Direction, string> = {
+  north: 'N',
+  south: 'S',
+  east: 'E',
+  west: 'W',
+  up: 'UP',
+  down: 'DOWN',
+};
+
+/**
+ * Derive the 4-step Active Quest Objective banner from live HUD game state.
+ */
+export function computeQuestObjective(params: {
+  monsters: HudMonster[];
+  lastScan: ScanDetails | null;
+  inventory: string[];
+  exits: Direction[];
+}): QuestObjective {
+  if (params.inventory.length > 0) {
+    return {
+      step: 4,
+      text: 'STEP 4/4: Commit Scroll acquired! Click [CAST] or [BIOS / SPELLS] to unleash it, or [TOP] for rankings.',
+      focusKeys: ['CAST', 'TOP'],
+    };
+  }
+
+  if (params.monsters.length > 0) {
+    const targetScanned =
+      params.lastScan !== null &&
+      params.monsters.some(m => m.name === params.lastScan?.target);
+
+    if (targetScanned) {
+      return {
+        step: 3,
+        text: 'STEP 3/4: Bug analyzed! Click [ATTACK] for melee combat or [PATCH] for a critical code fix.',
+        focusKeys: ['ATTACK', 'PATCH'],
+      };
+    }
+
+    return {
+      step: 2,
+      text: 'STEP 2/4: Hostile bug detected! Click [SCAN] to inspect its GitHub issue diagnostics.',
+      focusKeys: ['SCAN'],
+    };
+  }
+
+  const primaryDir = params.exits.includes('north')
+    ? 'north'
+    : (params.exits[0] ?? 'north');
+  const shortDir = DIRECTION_SHORT_LABEL[primaryDir] ?? 'N';
+
+  return {
+    step: 1,
+    text: `STEP 1/4: Sector clear. Click glowing [MOVE ${shortDir}] to enter the codebase dungeon.`,
+    focusKeys: [`MOVE ${shortDir}`],
+  };
 }
 
 /**

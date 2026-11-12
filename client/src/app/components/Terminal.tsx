@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { Terminal as XTerm, type ITheme } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import {
   VGA_THEME,
@@ -67,12 +66,46 @@ interface TerminalProps {
   onRegisterSender?: (sendFn: (rawCommand: string) => void) => void;
 }
 
+const TERMINAL_COLS = 80;
+const TERMINAL_MIN_ROWS = 24;
+const TERMINAL_FONT_FAMILY = '"Courier New", "Lucida Console", Monaco, monospace';
+
+/**
+ * Compute optimal fontSize and proportional row count so all 80 columns
+ * fill the CRT container horizontally without expanding past 80 cols.
+ */
+function computeScaledGrid(
+  containerWidth: number,
+  containerHeight: number,
+  measureCtx: CanvasRenderingContext2D | null,
+): { fontSize: number; rows: number } {
+  const usableWidth = Math.max(320, containerWidth - 32);
+  let fontSize = Math.max(9, Math.min(22, Math.floor(usableWidth / (TERMINAL_COLS * 0.6))));
+
+  if (measureCtx) {
+    while (fontSize > 9) {
+      measureCtx.font = `${fontSize}px ${TERMINAL_FONT_FAMILY}`;
+      const cellWidth = measureCtx.measureText('0000000000').width / 10;
+      if (cellWidth * TERMINAL_COLS <= containerWidth - 22) break;
+      fontSize -= 1;
+    }
+  }
+
+  const approxLineHeight = Math.ceil(fontSize * 1.2);
+  const rows = Math.max(
+    TERMINAL_MIN_ROWS,
+    Math.min(48, Math.floor(Math.max(0, containerHeight - 16) / approxLineHeight)),
+  );
+
+  return { fontSize, rows };
+}
+
 /**
  * Terminal — XTerm.js terminal component with WebSocket connection.
  *
- * Connects to NEXT_PUBLIC_WS_URL (default ws://localhost:4000), displays
- * 80x24 ANSI output, triggers WebAudio keystroke/event SFX, and forwards
- * Wave 3+ events to TacticalHud and PatchModal.
+ * Connects to NEXT_PUBLIC_WS_URL (default ws://localhost:4000), locks the
+ * grid at 80 columns while dynamically scaling fontSize to fill the CRT
+ * monitor horizontally, triggers WebAudio SFX, and forwards Wave 3+ events.
  */
 export function Terminal({
   wsUrl,
@@ -83,7 +116,7 @@ export function Terminal({
 }: TerminalProps) {
   const effectiveWsUrl = wsUrl ?? getClientWsUrl();
   const containerRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<{ terminal: XTerm; fitAddon: FitAddon } | null>(null);
+  const xtermRef = useRef<XTerm | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const playerIdRef = useRef<string>('pending');
   const reconnectAttemptRef = useRef(0);
@@ -120,7 +153,7 @@ export function Terminal({
     const trimmed = rawInput.trim();
     if (!trimmed) return;
 
-    const terminal = xtermRef.current?.terminal;
+    const terminal = xtermRef.current;
     const ws = wsRef.current;
 
     if (echoToTerminal && terminal) {
@@ -163,7 +196,7 @@ export function Terminal({
   // Apply phosphor mode changes live to XTerm theme
   useEffect(() => {
     if (xtermRef.current) {
-      xtermRef.current.terminal.options.theme = PHOSPHOR_XTERM_THEMES[phosphorMode];
+      xtermRef.current.options.theme = PHOSPHOR_XTERM_THEMES[phosphorMode];
     }
   }, [phosphorMode]);
 
@@ -262,31 +295,66 @@ export function Terminal({
   }, [effectiveWsUrl, schedulePrompt, scheduleReconnect]);
 
   useEffect(() => {
-    if (!containerRef.current || xtermRef.current) return;
+    const container = containerRef.current;
+    if (!container || xtermRef.current) return;
     unmountedRef.current = false;
+
+    const measureCanvas = document.createElement('canvas');
+    const measureCtx = measureCanvas.getContext('2d');
+    const initialRect = container.getBoundingClientRect();
+    const initialGrid = computeScaledGrid(
+      initialRect.width || 720,
+      initialRect.height || 520,
+      measureCtx,
+    );
 
     const terminal = new XTerm({
       cursorBlink: true,
       cursorStyle: 'block',
       theme: PHOSPHOR_XTERM_THEMES[phosphorMode],
-      fontSize: 14,
-      fontFamily: '"Courier New", "Lucida Console", Monaco, monospace',
-      cols: 80,
-      rows: 24,
+      fontSize: initialGrid.fontSize,
+      fontFamily: TERMINAL_FONT_FAMILY,
+      cols: TERMINAL_COLS,
+      rows: initialGrid.rows,
       scrollback: 1000,
       convertEol: true,
     });
 
-    const fitAddon = new FitAddon();
-    terminal.loadAddon(fitAddon);
-    terminal.open(containerRef.current);
+    terminal.open(container);
+    xtermRef.current = terminal;
+
+    let rafId: number | null = null;
+    const applyScaledGrid = () => {
+      rafId = null;
+      if (unmountedRef.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      if (rect.width <= 0) return;
+
+      const { fontSize, rows } = computeScaledGrid(rect.width, rect.height, measureCtx);
+      if (terminal.options.fontSize !== fontSize) {
+        terminal.options.fontSize = fontSize;
+      }
+      if (terminal.cols !== TERMINAL_COLS || terminal.rows !== rows) {
+        terminal.resize(TERMINAL_COLS, rows);
+      }
+    };
+
+    const scheduleScale = () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(applyScaledGrid);
+    };
 
     requestAnimationFrame(() => {
-      fitAddon.fit();
+      applyScaledGrid();
       terminal.focus();
     });
 
-    xtermRef.current = { terminal, fitAddon };
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(scheduleScale)
+        : null;
+    resizeObserver?.observe(container);
+    window.addEventListener('resize', scheduleScale);
 
     const inputDisposable = terminal.onData((data) => {
       const sound = getSoundEngine();
@@ -325,17 +393,16 @@ export function Terminal({
       }
     });
 
-    const handleResize = () => fitAddon.fit();
-    window.addEventListener('resize', handleResize);
-
     connect(terminal);
 
     return () => {
       unmountedRef.current = true;
+      if (rafId !== null) cancelAnimationFrame(rafId);
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       if (promptTimerRef.current) clearTimeout(promptTimerRef.current);
+      resizeObserver?.disconnect();
       inputDisposable.dispose();
-      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('resize', scheduleScale);
       wsRef.current?.close();
       terminal.dispose();
       xtermRef.current = null;
@@ -345,7 +412,7 @@ export function Terminal({
   return (
     <div
       ref={containerRef}
-      className="w-full h-full min-h-[68vh] p-2"
+      className="w-full h-full min-h-[68vh] p-2 overflow-hidden flex items-start justify-center"
       style={{ background: 'transparent' }}
     />
   );
